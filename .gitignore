@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Audio et sorties de travail (ne jamais versionner de donnees de reunion)
+*.wav
+*.mp3
+*.m4a
+transcript.txt
+*.log
+
+# Modeles (jamais dans git, telecharges par Ollama / faster-whisper)
+models/
+*.bin
+*.gguf
+
+# Secrets
+config_local.py
+.env
+
+# OS / editeurs
+.DS_Store
+.idea/
+.vscode/
+
+# Tests
+.pytest_cache/
