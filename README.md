@@ -233,7 +233,7 @@ a `qwen2.5:3b` dans `config.py`.
 
 | Probleme | Cause probable | Solution |
 |---|---|---|
-| `setup.sh`/`setup.bat` echoue sur numpy (`metadata-generation-failed`, compilateur introuvable) | Version de Python trop recente pour un pin exact du projet : aucun wheel precompile, pip tente de compiler depuis les sources | `git pull` pour recuperer un `requirements.txt` a jour, puis relancer le setup. En depannage immediat : `pip install --upgrade numpy` dans le venv avant de relancer `pip install -r requirements.txt` |
+| `setup.sh`/`setup.bat` echoue sur un paquet (numpy, av...) avec `metadata-generation-failed` / "Microsoft Visual C++ 14.0 or greater is required" | Version de Python tres recente : aucun wheel precompile pour ce paquet a cette version, pip tente de compiler depuis les sources et echoue sans compilateur | `git pull` pour recuperer un `requirements.txt` a jour (pins mis a jour au fil des retours), puis relancer `pip install -r requirements.txt`. Si l'erreur persiste sur un autre paquet, dis-le : le pin correspondant doit etre desserre |
 | Telechargement du modele Ollama interrompu (`wsarecv`, `max retries exceeded`) | Coupure reseau transitoire pendant le telechargement (plusieurs Go) | Relancer simplement `ollama pull <modele>` ; ca reprend, ce n'est pas lie au code |
 | "Impossible de contacter Ollama..." | Ollama n'est pas lance | `ollama serve`, puis reessayer |
 | "Le modele Ollama 'xxx' n'est pas installe" | Modele pas encore telecharge | `ollama pull <modele>` (voir `config.py`) |
