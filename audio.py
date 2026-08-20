@@ -158,13 +158,21 @@ class AudioRecorder:
 
     def stop(self):
         self._recording = False
+
+        print("[MeetingCT] audio.stop() : arret du flux micro...", flush=True)
         if self._mic_stream:
             self._mic_stream.stop()
             self._mic_stream.close()
+        print("[MeetingCT] audio.stop() : flux micro arrete.", flush=True)
+
         if self._sys_stream:
+            print("[MeetingCT] audio.stop() : arret du flux son systeme...", flush=True)
             self._sys_stream.stop()
             self._sys_stream.close()
+            print("[MeetingCT] audio.stop() : flux son systeme arrete.", flush=True)
+
         if self._sys_recorder_cm:
+            print("[MeetingCT] audio.stop() : arret du thread loopback Windows...", flush=True)
             self._sys_stop.set()
             if self._sys_thread:
                 self._sys_thread.join(timeout=5)
@@ -172,13 +180,25 @@ class AudioRecorder:
                 self._sys_recorder_cm.__exit__(None, None, None)
             except Exception:
                 pass
+            print("[MeetingCT] audio.stop() : thread loopback Windows arrete.", flush=True)
+
         if self._drain_thread:
-            # Pas de timeout ici : on doit avoir la certitude que _drain a fini
-            # d'ecrire avant de fermer le fichier, sinon on ferme le WAV sous
-            # les pieds du thread encore en train d'y ecrire (I/O operation on
-            # closed file). Le volume restant a vider tient toujours en une
-            # fraction de seconde, ce join ne bloque donc pas longtemps.
-            self._drain_thread.join()
+            # Pas de timeout definitif ici : on doit avoir la certitude que
+            # _drain a fini d'ecrire avant de fermer le fichier, sinon on
+            # ferme le WAV sous les pieds du thread encore en train d'y
+            # ecrire (I/O operation on closed file). On boucle par petites
+            # tranches pour pouvoir signaler si ca prend anormalement longtemps
+            # plutot que de bloquer en silence.
+            print("[MeetingCT] audio.stop() : finalisation de l'ecriture disque...", flush=True)
+            waited = 0
+            while self._drain_thread.is_alive():
+                self._drain_thread.join(timeout=1)
+                waited += 1
+                if self._drain_thread.is_alive():
+                    print(f"[MeetingCT] audio.stop() : ecriture disque toujours en cours ({waited}s)...", flush=True)
+            print("[MeetingCT] audio.stop() : ecriture disque terminee.", flush=True)
+
         if self._writer:
             self._writer.close()
+        print("[MeetingCT] audio.stop() : termine.", flush=True)
         return self._path
