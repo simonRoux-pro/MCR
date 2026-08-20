@@ -114,6 +114,19 @@ Ce script :
 - verifie qu'Ollama est bien installe puis telecharge le modele `mistral`
   (quelques Go, la premiere fois seulement).
 
+Le script s'arrete et affiche une erreur claire des qu'une etape echoue (par
+exemple une coupure reseau pendant le telechargement du modele) plutot que de
+continuer silencieusement. Si tu ne vois pas le message final
+`== Termine. ==`, une etape a echoue : lis le message d'erreur juste au-dessus
+et relance simplement `setup.sh`/`setup.bat` (les etapes deja faites, comme
+un paquet Python deja installe, ne sont pas refaites inutilement).
+
+Verifie que le modele est bien present avant de continuer :
+```bash
+ollama list
+```
+Tu dois voir `mistral` dans la liste. Sinon, relance `ollama pull mistral`.
+
 ## Etape 7 — Lancer l'application
 
 Assure-toi qu'Ollama tourne (icone dans la barre systeme, ou `ollama serve`
@@ -143,5 +156,7 @@ section **"Tutoriel : premiere utilisation"** du [README principal](README.md#4-
 |---|---|
 | `python` / `git` / `ollama` : commande introuvable | Redemarre le terminal (voire la machine) apres l'installation, la variable PATH doit se recharger |
 | `python --version` affiche une version 2.x | Utilise `python3` a la place de `python` (frequent sur macOS/Linux) |
-| Le script `setup.sh` echoue sur "Ollama n'est pas installe" | Reprends l'etape 3, puis relance `./setup.sh` |
+| Le script `setup.sh`/`setup.bat` echoue sur "Ollama n'est pas installe" | Reprends l'etape 3, puis relance le script |
+| Le script echoue pendant `pip install` (compilateur manquant, `metadata-generation-failed`) | `git pull` dans le dossier du projet (requirements.txt peut avoir ete corrige entre-temps), puis relance le script |
+| Le script echoue pendant `ollama pull mistral` (`wsarecv`, `max retries exceeded`...) | Coupure reseau transitoire pendant le telechargement (plusieurs Go) : relance juste `ollama pull mistral`, l'environnement Python est deja installe |
 | Autres erreurs une fois l'appli lancee | Voir la section **Depannage** du [README principal](README.md#10-depannage) |
