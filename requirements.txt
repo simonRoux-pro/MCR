@@ -3,6 +3,8 @@ requests==2.34.2
 sounddevice==0.4.7
 numpy==1.26.4
 soundfile==0.12.1
+# Loopback WASAPI (capture du son systeme sur Windows uniquement, voir audio.py)
+soundcard==0.4.3; sys_platform == "win32"
 ollama==0.3.3
 httpx==0.27.2
 PySide6==6.7.2

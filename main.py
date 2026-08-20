@@ -120,7 +120,13 @@ class MainWindow(QMainWindow):
 
     def start_rec(self):
         self.recorder.start(self.audio_path)
-        self.status.setText("Enregistrement en cours...")
+        if self.recorder.system_audio_active:
+            self.status.setText("Enregistrement en cours (micro + son systeme)...")
+        else:
+            self.status.setText(
+                "Enregistrement en cours (micro uniquement : son systeme non "
+                "capte, voir README section \"Capture du son des participants\")."
+            )
         self.btn_rec.setEnabled(False)
         self.btn_stop.setEnabled(True)
         self.btn_load.setEnabled(False)

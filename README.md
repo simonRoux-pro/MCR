@@ -6,7 +6,9 @@ par mail si tu choisis de l'envoyer.
 
 ## Fonctionnement en un coup d'oeil
 
-1. Enregistrement du micro **ou** chargement d'un fichier audio existant (mode fichier)
+1. Enregistrement du micro **et du son systeme** (les autres participants en
+   visio Teams/Skype/Meet) simultanement, **ou** chargement d'un fichier audio
+   existant (mode fichier)
 2. Transcription locale (faster-whisper, tourne sur CPU)
 3. Generation du compte-rendu (LLM local via Ollama)
 4. Consultation / export en `.txt` ou `.md` / envoi par mail (seule sortie reseau)
@@ -88,6 +90,37 @@ python main.py
    s'affiche dans le champ **"Transcription"**, meme si la suite echoue.
 5. Le compte-rendu se genere ensuite via Ollama (map-reduce si la reunion est
    longue) et s'affiche dans le champ **"Compte-rendu"**.
+
+Des le demarrage de l'enregistrement, le statut affiche si le son systeme (les
+autres participants) a pu etre capte en plus du micro :
+- *"Enregistrement en cours (micro + son systeme)..."* : les deux sont mixes.
+- *"Enregistrement en cours (micro uniquement...)"* : seule ta voix est captee,
+  voir la section [Capture du son des autres participants](#capture-du-son-des-autres-participants-visio) ci-dessous.
+
+### Capture du son des autres participants (visio)
+
+Le micro seul ne capte que toi. Pour un compte-rendu complet d'une visio
+Teams/Skype/Meet, l'application capte **aussi le son systeme** (ce que tu
+entends dans tes haut-parleurs ou ton casque) et le mixe avec le micro,
+automatiquement selon l'OS :
+
+| OS | Fonctionnement | A faire |
+|---|---|---|
+| **Windows** | Loopback WASAPI natif (librairie `soundcard`) | Rien, ca marche des l'installation |
+| **Linux** | Source "monitor" exposee par PulseAudio/PipeWire | Rien si PulseAudio/PipeWire est present (cas standard sur les distributions grand public) |
+| **macOS** | Pas de boucle audio native : necessite un peripherique virtuel | Installer [BlackHole](https://github.com/ExistentialAudio/BlackHole) (gratuit, open source), voir ci-dessous |
+
+**Installation de BlackHole sur macOS** (une seule fois) :
+1. Installe [BlackHole 2ch](https://github.com/ExistentialAudio/BlackHole).
+2. Cree un peripheriques de sortie agrege ("Multi-Output Device") dans
+   l'utilitaire "Configuration audio et MIDI" combinant tes haut-parleurs/casque
+   habituels **et** BlackHole, puis selectionne ce peripherique agrege comme
+   sortie audio par defaut pendant tes visios. Ainsi tu entends toujours le
+   son normalement, et BlackHole en recoit une copie que l'application capte.
+
+Si aucune capture systeme n'est disponible (peripherique absent, non
+configure...), l'application **ne plante pas** : elle continue avec le micro
+seul, et te previent via le statut affiche.
 
 ### Option B — Charger un fichier audio existant (mode fichier)
 
@@ -203,22 +236,30 @@ a `qwen2.5:3b` dans `config.py`.
 | "Impossible de contacter Ollama..." | Ollama n'est pas lance | `ollama serve`, puis reessayer |
 | "Le modele Ollama 'xxx' n'est pas installe" | Modele pas encore telecharge | `ollama pull <modele>` (voir `config.py`) |
 | Pas de son enregistre / erreur au demarrage de l'enregistrement | Pas de micro detecte, ou peripherique deja utilise | Verifier le micro par defaut du systeme, ou utiliser le mode fichier en attendant |
+| Statut "micro uniquement" (les autres participants ne sont pas dans le CR) | Le son systeme n'a pas pu etre capte | Windows/Linux : verifier qu'aucune erreur peripherique n'est remontee. macOS : installer [BlackHole](https://github.com/ExistentialAudio/BlackHole) (voir section dediee) |
 | Transcription tres lente | Modele `medium` sur une machine modeste | Passer a `whisper_model = "base"` dans `config.py` |
 | Envoi mail en echec | SMTP non configure ou identifiants invalides | Renseigner `smtp_host`/`smtp_user`/`smtp_password` dans `config.py` ou `config_local.py` |
 
 ## Ce qui reste a faire cote materiel / environnement
 
-Le code est fonctionnel et teste (voir section Tests), mais trois elements
-dependent de la machine sur laquelle l'outil est reellement utilise et n'ont
-pas pu etre valides dans cet environnement de developpement :
+Le code est fonctionnel et teste au niveau logique (voir section Tests), mais
+plusieurs elements dependent de la machine sur laquelle l'outil est reellement
+utilise et **n'ont pas pu etre valides sur du materiel audio reel** dans cet
+environnement de developpement (sandbox sans micro, sans haut-parleurs, sans
+Windows/macOS) :
 
 - **Micro** : l'enregistrement reel via `sounddevice` necessite un peripherique
   audio present sur la machine cible (non disponible ici). Le mode fichier
   permet de valider toute la chaine en attendant.
-- **Audio systeme / visio** (capter le son d'une visio Teams/Meet/Zoom plutot
-  que le micro) : non implemente dans cette V1, qui enregistre uniquement le
-  micro par defaut du systeme. A ajouter si besoin (selon l'OS, cela demande
-  une capture de boucle audio dediee).
+- **Capture du son systeme (autres participants en visio)** : implementee
+  (loopback WASAPI via `soundcard` sur Windows, source "monitor" via
+  sounddevice sur Linux, BlackHole sur macOS — voir la section dediee
+  ci-dessus) et testee unitairement (detection de peripherique, mixage des
+  pistes, repli propre si indisponible), mais **pas testee en conditions
+  reelles** faute de machine Windows/macOS et de peripheriques audio dans cet
+  environnement. A valider en priorite sur les machines cibles avant un usage
+  en production, en particulier le mode Windows (`soundcard`) jamais execute
+  ici.
 - **Ollama** : le modele LLM (`mistral` par defaut) doit etre installe et le
   service demarre sur la machine cible (`ollama pull mistral` + `ollama serve`).
   La gestion d'erreur si Ollama n'est pas lance a ete testee (simulation d'un

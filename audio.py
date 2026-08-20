@@ -1,25 +1,77 @@
+import platform
 import queue
 import threading
+import numpy as np
 import sounddevice as sd
 import soundfile as sf
 from config import CONFIG
 
 
+def find_loopback_device_sounddevice():
+    """Linux (PulseAudio/PipeWire) et macOS (BlackHole) : le son systeme est
+    expose comme un peripherique d'entree normal, repere par mot-cle dans son
+    nom ("monitor" pour PulseAudio/PipeWire, "blackhole" pour le pilote
+    virtuel macOS). Retourne un index de peripherique sounddevice, ou None
+    si aucun n'est trouve."""
+    try:
+        devices = sd.query_devices()
+    except Exception:
+        return None
+    keywords = ("monitor", "blackhole")
+    for i, dev in enumerate(devices):
+        if dev.get("max_input_channels", 0) > 0 and any(k in dev["name"].lower() for k in keywords):
+            return i
+    return None
+
+
+def _mix_blocks(mic_block, sys_block):
+    """Mixe un bloc micro (ma voix) et un bloc son systeme (les autres
+    participants) en sommant les deux pistes, puis ecrete pour eviter la
+    saturation si les deux parlent fort en meme temps."""
+    n = min(len(mic_block), len(sys_block))
+    mixed = mic_block[:n].astype(np.float32) + sys_block[:n].astype(np.float32)
+    return np.clip(mixed, -1.0, 1.0)
+
+
 class AudioRecorder:
-    """Ecrit l'audio directement dans un WAV pendant l'enregistrement.
-    Aucune accumulation en RAM, resistant aux longues durees (reunions de 2 h)."""
+    """Enregistre le micro et, si possible, le son systeme (voix des AUTRES
+    participants en visio Teams/Skype/Meet) en simultane, mixe les deux
+    pistes, et ecrit le resultat directement dans un WAV pendant
+    l'enregistrement. Aucune accumulation en RAM, resistant aux longues
+    durees (reunions de 2 h).
+
+    Capture du son systeme selon l'OS :
+    - Windows : loopback WASAPI natif (librairie `soundcard`), fonctionne
+      sans configuration particuliere ;
+    - Linux : source "monitor" exposee par PulseAudio/PipeWire ;
+    - macOS : peripherique virtuel type BlackHole, a installer par
+      l'utilisateur (voir README).
+
+    Si aucune capture systeme n'est disponible sur la machine, on continue
+    avec le micro seul plutot que d'empecher l'enregistrement : voir
+    `system_audio_active` apres `start()`."""
 
     def __init__(self):
-        self._q = queue.Queue()
+        self._mic_q = queue.Queue()
+        self._sys_q = queue.Queue()
         self._recording = False
-        self._stream = None
+        self._mic_stream = None
+        self._sys_stream = None          # mode sounddevice (Linux/macOS)
+        self._sys_recorder_cm = None     # mode soundcard (Windows, loopback WASAPI)
+        self._sys_thread = None
+        self._sys_stop = threading.Event()
+        self._drain_thread = None
         self._writer = None
-        self._thread = None
         self._path = None
+        self.system_audio_active = False
 
-    def _callback(self, indata, frames, time, status):
+    def _mic_callback(self, indata, frames, time, status):
         if self._recording:
-            self._q.put(indata.copy())
+            self._mic_q.put(indata.copy())
+
+    def _sys_callback(self, indata, frames, time, status):
+        if self._recording:
+            self._sys_q.put(indata.copy())
 
     def start(self, path: str):
         self._path = path
@@ -30,30 +82,98 @@ class AudioRecorder:
             channels=CONFIG.channels,
             subtype="PCM_16",
         )
-        self._stream = sd.InputStream(
+
+        self._mic_stream = sd.InputStream(
             samplerate=CONFIG.samplerate,
             channels=CONFIG.channels,
-            callback=self._callback,
+            callback=self._mic_callback,
         )
-        self._stream.start()
-        self._thread = threading.Thread(target=self._drain, daemon=True)
-        self._thread.start()
+        self._mic_stream.start()
+
+        self.system_audio_active = self._start_system_audio()
+
+        self._drain_thread = threading.Thread(target=self._drain, daemon=True)
+        self._drain_thread.start()
+
+    def _start_system_audio(self):
+        """Tente de demarrer la capture du son systeme. Renvoie True si elle a
+        pu demarrer, False sinon (l'enregistrement continue alors micro seul)."""
+        if platform.system() == "Windows" and self._start_windows_loopback():
+            return True
+        device = find_loopback_device_sounddevice()
+        if device is None:
+            return False
+        try:
+            self._sys_stream = sd.InputStream(
+                samplerate=CONFIG.samplerate,
+                channels=CONFIG.channels,
+                device=device,
+                callback=self._sys_callback,
+            )
+            self._sys_stream.start()
+            return True
+        except Exception:
+            self._sys_stream = None
+            return False
+
+    def _start_windows_loopback(self):
+        try:
+            import soundcard as sc
+            mic = sc.get_microphone(id=str(sc.default_speaker().name), include_loopback=True)
+            self._sys_recorder_cm = mic.recorder(samplerate=CONFIG.samplerate, channels=CONFIG.channels)
+            recorder = self._sys_recorder_cm.__enter__()
+        except Exception:
+            self._sys_recorder_cm = None
+            return False
+        self._sys_stop.clear()
+        self._sys_thread = threading.Thread(
+            target=self._poll_windows_loopback, args=(recorder,), daemon=True
+        )
+        self._sys_thread.start()
+        return True
+
+    def _poll_windows_loopback(self, recorder, blocksize=1024):
+        while not self._sys_stop.is_set():
+            try:
+                block = recorder.record(numframes=blocksize)
+            except Exception:
+                break
+            self._sys_q.put(block)
 
     def _drain(self):
-        while self._recording or not self._q.empty():
+        while self._recording or not self._mic_q.empty():
             try:
-                block = self._q.get(timeout=0.5)
-                self._writer.write(block)   # ecrit sur disque immediatement
+                mic_block = self._mic_q.get(timeout=0.5)
             except queue.Empty:
-                pass
+                continue
+            if self.system_audio_active:
+                try:
+                    sys_block = self._sys_q.get(timeout=0.1)
+                    block = _mix_blocks(mic_block, sys_block)
+                except queue.Empty:
+                    block = mic_block   # rien de neuf cote son systeme sur ce cycle
+            else:
+                block = mic_block
+            self._writer.write(block)   # ecrit sur disque immediatement
 
     def stop(self):
         self._recording = False
-        if self._stream:
-            self._stream.stop()
-            self._stream.close()
-        if self._thread:
-            self._thread.join(timeout=5)
+        if self._mic_stream:
+            self._mic_stream.stop()
+            self._mic_stream.close()
+        if self._sys_stream:
+            self._sys_stream.stop()
+            self._sys_stream.close()
+        if self._sys_recorder_cm:
+            self._sys_stop.set()
+            if self._sys_thread:
+                self._sys_thread.join(timeout=5)
+            try:
+                self._sys_recorder_cm.__exit__(None, None, None)
+            except Exception:
+                pass
+        if self._drain_thread:
+            self._drain_thread.join(timeout=5)
         if self._writer:
             self._writer.close()
         return self._path
