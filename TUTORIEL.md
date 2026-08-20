@@ -111,6 +111,8 @@ Ce script :
 - cree un environnement Python isole (`.venv`), pour ne rien installer sur
   le systeme global ;
 - installe les librairies Python necessaires (faster-whisper, PySide6...) ;
+- pre-telecharge le modele Whisper pour la transcription (quelques centaines
+  de Mo, une seule fois) — relançable seul via `python telecharge_modele.py` ;
 - verifie qu'Ollama est bien installe puis telecharge le modele `mistral`
   (quelques Go, la premiere fois seulement).
 
