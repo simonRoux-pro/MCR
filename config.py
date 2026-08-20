@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass
 
 
@@ -28,3 +29,10 @@ class Config:
 
 
 CONFIG = Config()
+
+
+def chemin_modele_whisper() -> str:
+    """Dossier local ou telecharge_modele.py depose le modele Whisper.
+    (dans models/, deja exclu de git par le .gitignore)"""
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "models", f"whisper-{CONFIG.whisper_model}")
