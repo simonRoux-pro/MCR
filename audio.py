@@ -173,7 +173,12 @@ class AudioRecorder:
             except Exception:
                 pass
         if self._drain_thread:
-            self._drain_thread.join(timeout=5)
+            # Pas de timeout ici : on doit avoir la certitude que _drain a fini
+            # d'ecrire avant de fermer le fichier, sinon on ferme le WAV sous
+            # les pieds du thread encore en train d'y ecrire (I/O operation on
+            # closed file). Le volume restant a vider tient toujours en une
+            # fraction de seconde, ce join ne bloque donc pas longtemps.
+            self._drain_thread.join()
         if self._writer:
             self._writer.close()
         return self._path
