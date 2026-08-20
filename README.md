@@ -53,10 +53,11 @@ cd meeting-ct
 setup.bat
 ```
 
-Le script cree l'environnement Python (`.venv`), installe les dependances et
+Le script cree l'environnement Python (`.venv`), installe les dependances,
+pre-telecharge le modele Whisper (transcription, quelques centaines de Mo) et
 telecharge le modele Ollama par defaut (`mistral`, quelques Go, une seule fois).
-Le modele Whisper (faster-whisper) se telecharge automatiquement au premier
-lancement, lors de la toute premiere transcription.
+Les deux modeles sont ainsi deja sur le disque avant la premiere vraie
+reunion : rien ne se telecharge au moment ou tu attends ton compte-rendu.
 
 ## 3. Lancer l'application
 
@@ -235,6 +236,7 @@ a `qwen2.5:3b` dans `config.py`.
 |---|---|---|
 | `setup.sh`/`setup.bat` echoue sur un paquet (numpy, av...) avec `metadata-generation-failed` / "Microsoft Visual C++ 14.0 or greater is required" | Version de Python tres recente : aucun wheel precompile pour ce paquet a cette version, pip tente de compiler depuis les sources et echoue sans compilateur | `git pull` pour recuperer un `requirements.txt` a jour (pins mis a jour au fil des retours), puis relancer `pip install -r requirements.txt`. Si l'erreur persiste sur un autre paquet, dis-le : le pin correspondant doit etre desserre |
 | Telechargement du modele Ollama interrompu (`wsarecv`, `max retries exceeded`) | Coupure reseau transitoire pendant le telechargement (plusieurs Go) | Relancer simplement `ollama pull <modele>` ; ca reprend, ce n'est pas lie au code |
+| Telechargement du modele Whisper qui reste bloque sans erreur (0% CPU, rien dans le terminal) | Reseau avec IPv6 degrade et/ou telechargeur `hf_xet` (voir `netfix.py` : l'application force IPv4 + telechargement HTTP classique) | Mettre le code a jour (`git pull`), puis relancer `python telecharge_modele.py` hors de l'application ; la progression s'affiche dans le terminal |
 | "Impossible de contacter Ollama..." | Ollama n'est pas lance | `ollama serve`, puis reessayer |
 | "Le modele Ollama 'xxx' n'est pas installe" | Modele pas encore telecharge | `ollama pull <modele>` (voir `config.py`) |
 | Pas de son enregistre / erreur au demarrage de l'enregistrement | Pas de micro detecte, ou peripherique deja utilise | Verifier le micro par defaut du systeme, ou utiliser le mode fichier en attendant |

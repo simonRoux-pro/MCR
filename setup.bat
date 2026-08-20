@@ -18,14 +18,22 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo == 2. Verification d'Ollama ==
+echo == 2. Telechargement du modele Whisper (transcription, quelques centaines de Mo) ==
+python telecharge_modele.py
+if errorlevel 1 (
+    echo Le telechargement du modele Whisper a echoue.
+    echo Relance simplement : python telecharge_modele.py
+    exit /b 1
+)
+
+echo == 3. Verification d'Ollama ==
 where ollama >nul 2>nul
 if errorlevel 1 (
     echo Ollama n'est pas installe. Installe-le depuis https://ollama.com puis relance ce script.
     exit /b 1
 )
 
-echo == 3. Telechargement du modele (plusieurs Go, une seule fois) ==
+echo == 4. Telechargement du modele Ollama (plusieurs Go, une seule fois) ==
 ollama pull mistral
 if errorlevel 1 (
     echo.
