@@ -22,9 +22,17 @@ Les longues reunions (2 h et plus) sont gerees de bout en bout :
 
 ## 1. Prerequis
 
-- Python 3.10 ou plus recent
-- [Ollama](https://ollama.com) installe (pour generer le compte-rendu)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![Git](https://img.shields.io/badge/Git-Telecharger-F05032?logo=git&logoColor=white)](https://git-scm.com/downloads)
+[![Ollama](https://img.shields.io/badge/Ollama-Telecharger-000000?logo=ollama&logoColor=white)](https://ollama.com)
+
+- **Python 3.10+** — clique sur le badge ci-dessus pour telecharger l'installeur
+- **Git** — necessaire pour cloner le depot ; clique sur le badge pour telecharger l'installeur
+- **[Ollama](https://ollama.com)** installe (pour generer le compte-rendu)
 - Un micro fonctionnel (optionnel : tu peux te passer de micro en mode fichier, voir plus bas)
+
+> Nouveau sur ces outils ? Le [guide d'installation detaille](TUTORIEL.md) explique
+> pas a pas comment installer Python, Git et Ollama pour un premier lancement.
 
 ## 2. Installation
 
