@@ -62,9 +62,30 @@ donnee sur internet.
    ```
 
 Le modele de langage (`mistral` par defaut, quelques Go) sera telecharge a
-l'etape 5 par le script d'installation — pas besoin de le faire main.
+l'etape 6 par le script d'installation — pas besoin de le faire main.
 
-## Etape 4 — Recuperer le code du projet
+## Etape 4 — macOS uniquement : capter les autres participants (BlackHole)
+
+Sur Windows et Linux, l'application capte automatiquement le son des autres
+participants d'une visio (Teams/Skype/Meet) en plus de ton micro — rien a
+faire. **Sur macOS, une etape manuelle est necessaire**, car Apple ne permet
+pas nativement de "boucler" le son des haut-parleurs vers une application :
+
+1. Installe [BlackHole 2ch](https://github.com/ExistentialAudio/BlackHole)
+   (peripherique audio virtuel gratuit et open source).
+2. Ouvre l'utilitaire macOS **"Configuration audio et MIDI"**, cree un
+   **"Peripherique de sortie multiple"** combinant tes haut-parleurs/casque
+   habituels et BlackHole.
+3. Pendant tes visios, selectionne ce peripherique combine comme sortie audio
+   par defaut : tu entends toujours normalement, et BlackHole en recoit une
+   copie que l'application pourra enregistrer.
+
+Sans cette etape sur macOS, l'application enregistre uniquement ton micro
+(donc pas les autres participants) — voir la section "Capture du son des
+autres participants" du [README principal](README.md#capture-du-son-des-autres-participants-visio)
+pour plus de details.
+
+## Etape 5 — Recuperer le code du projet
 
 Ouvre un terminal a l'endroit ou tu veux installer le projet, puis :
 
@@ -73,7 +94,7 @@ git clone <URL_DU_DEPOT> meeting-ct
 cd meeting-ct
 ```
 
-## Etape 5 — Installer les dependances du projet
+## Etape 6 — Installer les dependances du projet
 
 ### Linux / macOS
 ```bash
@@ -93,7 +114,7 @@ Ce script :
 - verifie qu'Ollama est bien installe puis telecharge le modele `mistral`
   (quelques Go, la premiere fois seulement).
 
-## Etape 6 — Lancer l'application
+## Etape 7 — Lancer l'application
 
 Assure-toi qu'Ollama tourne (icone dans la barre systeme, ou `ollama serve`
 dans un terminal a part), puis :
