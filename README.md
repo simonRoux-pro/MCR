@@ -233,6 +233,8 @@ a `qwen2.5:3b` dans `config.py`.
 
 | Probleme | Cause probable | Solution |
 |---|---|---|
+| `setup.sh`/`setup.bat` echoue sur numpy (`metadata-generation-failed`, compilateur introuvable) | Version de Python trop recente pour un pin exact du projet : aucun wheel precompile, pip tente de compiler depuis les sources | `git pull` pour recuperer un `requirements.txt` a jour, puis relancer le setup. En depannage immediat : `pip install --upgrade numpy` dans le venv avant de relancer `pip install -r requirements.txt` |
+| Telechargement du modele Ollama interrompu (`wsarecv`, `max retries exceeded`) | Coupure reseau transitoire pendant le telechargement (plusieurs Go) | Relancer simplement `ollama pull <modele>` ; ca reprend, ce n'est pas lie au code |
 | "Impossible de contacter Ollama..." | Ollama n'est pas lance | `ollama serve`, puis reessayer |
 | "Le modele Ollama 'xxx' n'est pas installe" | Modele pas encore telecharge | `ollama pull <modele>` (voir `config.py`) |
 | Pas de son enregistre / erreur au demarrage de l'enregistrement | Pas de micro detecte, ou peripherique deja utilise | Verifier le micro par defaut du systeme, ou utiliser le mode fichier en attendant |
