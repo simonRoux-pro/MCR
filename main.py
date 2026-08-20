@@ -22,13 +22,19 @@ class Worker(QThread):
     failed = Signal(str)                         # echec avant meme d'avoir une transcription
     summary_failed = Signal(str, str)            # transcription obtenue, mais echec du CR (ex : Ollama eteint)
 
-    def __init__(self, audio_path, from_file=False):
+    def __init__(self, audio_path, from_file=False, recorder=None):
         super().__init__()
         self.audio_path = audio_path
         self.from_file = from_file
+        self.recorder = recorder   # si fourni, recorder.stop() est appele ici (hors thread UI)
 
     def run(self):
         try:
+            if self.recorder is not None:
+                # L'arret de l'enregistrement (vidage du buffer audio sur disque)
+                # peut prendre un moment : on le fait dans ce thread pour ne
+                # jamais geler l'interface pendant ce temps.
+                self.audio_path = self.recorder.stop()
             if self.from_file:
                 validate_audio_file(self.audio_path)
             transcript_file = os.path.join(tempfile.gettempdir(), "transcript.txt")
@@ -133,14 +139,11 @@ class MainWindow(QMainWindow):
         self.progress.setValue(0)
 
     def stop_rec(self):
-        try:
-            self.recorder.stop()
-        except Exception as e:
-            QMessageBox.warning(self, "Erreur", str(e))
-            self._reset_buttons()
-            return
+        # L'arret reel (recorder.stop()) se fait dans le Worker, pas ici : vider
+        # le buffer audio sur disque peut prendre un moment, et on ne veut
+        # jamais geler l'interface pendant ce temps.
         self.btn_stop.setEnabled(False)
-        self._start_worker(self.audio_path, from_file=False)
+        self._start_worker(self.audio_path, from_file=False, recorder=self.recorder)
 
     def load_file(self):
         """Mode fichier : charge un WAV/MP3 existant au lieu d'enregistrer le micro.
@@ -155,10 +158,13 @@ class MainWindow(QMainWindow):
         self.btn_load.setEnabled(False)
         self._start_worker(path, from_file=True)
 
-    def _start_worker(self, audio_path, from_file):
-        self.status.setText("Transcription en cours... (peut durer plusieurs heures sur CPU)")
+    def _start_worker(self, audio_path, from_file, recorder=None):
+        self.status.setText(
+            "Transcription en cours... (peut durer plusieurs heures sur CPU ; le tout "
+            "premier lancement telecharge aussi le modele Whisper, patience si connexion lente)"
+        )
         self.progress.setValue(0)
-        self.worker = Worker(audio_path, from_file=from_file)
+        self.worker = Worker(audio_path, from_file=from_file, recorder=recorder)
         self.worker.transcript_progress.connect(self.on_transcript_progress)
         self.worker.summary_progress.connect(self.on_summary_progress)
         self.worker.transcribed.connect(self.on_transcribed)
