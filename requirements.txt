@@ -1,12 +1,15 @@
-faster-whisper==1.0.3
 requests==2.34.2
 sounddevice==0.4.7
-# numpy et PySide6 : version plancher (sans plafond) plutot qu'un pin exact.
-# Ce sont des paquets compiles dont le wheel disponible depend de la version
-# de Python installee ; un pin exact trop ancien echoue a l'installation sur
-# une version de Python recente (pas de wheel -> pip tente une compilation
-# depuis les sources, qui echoue sans compilateur C installe).
+# numpy, PySide6, faster-whisper : version plancher (sans plafond) plutot que
+# pin exact. Ce sont des paquets compiles (ou qui dependent de paquets
+# compiles, comme `av` pour faster-whisper) dont le wheel disponible depend
+# de la version de Python installee ; un pin exact trop ancien echoue a
+# l'installation sur une version de Python recente (pas de wheel -> pip tente
+# une compilation depuis les sources, qui echoue sans compilateur C installe).
 numpy>=1.26.4
+# faster-whisper 1.0.x exige `av<13`, une plage sans wheel pour Python 3.13+ ;
+# 1.1.0+ leve ce plafond (av>=11 seulement).
+faster-whisper>=1.1.0
 soundfile==0.12.1
 # Loopback WASAPI (capture du son systeme sur Windows uniquement, voir audio.py)
 soundcard==0.4.3; sys_platform == "win32"
