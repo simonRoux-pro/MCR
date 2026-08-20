@@ -1,20 +1,36 @@
 import os
-from faster_whisper import WhisperModel
-from config import CONFIG
+from faster_whisper import WhisperModel, download_model
+from config import CONFIG, chemin_modele_whisper
 
 _model = None
+
+
+def _trouver_modele() -> str:
+    """Retourne le chemin local du modele Whisper, sans JAMAIS telecharger :
+    un telechargement en pleine reunion peut bloquer toute la chaine sur un
+    reseau instable. Le modele doit avoir ete recupere au prealable par
+    telecharge_modele.py (fait automatiquement par setup.sh / setup.bat)."""
+    local = chemin_modele_whisper()
+    if os.path.isfile(os.path.join(local, "model.bin")):
+        return local
+    try:
+        # Cache Hugging Face deja present sur la machine (ancienne installation)
+        return download_model(CONFIG.whisper_model, local_files_only=True)
+    except Exception:
+        raise RuntimeError(
+            f"Le modele Whisper '{CONFIG.whisper_model}' n'est pas installe sur cette machine. "
+            "Lance d'abord : python telecharge_modele.py (telechargement avec reprise, "
+            "a faire une seule fois), puis reessaie."
+        )
 
 
 def _get_model():
     global _model
     if _model is None:
-        print(
-            f"[MeetingCT] Chargement du modele Whisper '{CONFIG.whisper_model}' "
-            "(telecharge depuis Hugging Face au premier lancement, mis en cache ensuite)...",
-            flush=True,
-        )
+        source = _trouver_modele()
+        print(f"[MeetingCT] Chargement du modele Whisper depuis : {source}", flush=True)
         _model = WhisperModel(
-            CONFIG.whisper_model,
+            source,
             device=CONFIG.whisper_device,
             compute_type=CONFIG.whisper_compute,
         )
