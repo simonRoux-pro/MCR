@@ -52,15 +52,20 @@ class Worker(QThread):
                 # L'arret de l'enregistrement (vidage du buffer audio sur disque)
                 # peut prendre un moment : on le fait dans ce thread pour ne
                 # jamais geler l'interface pendant ce temps.
+                print("[MeetingCT] Arret de l'enregistrement (vidage du buffer audio)...", flush=True)
                 self.audio_path = self.recorder.stop()
+                print(f"[MeetingCT] Enregistrement arrete, fichier ecrit : {self.audio_path}", flush=True)
             if self.from_file:
                 validate_audio_file(self.audio_path)
             transcript_file = os.path.join(tempfile.gettempdir(), "transcript.txt")
+            print("[MeetingCT] Debut de la transcription (chargement du modele Whisper si besoin)...", flush=True)
             transcript = transcribe(
                 self.audio_path, transcript_file,
                 progress=lambda s, d: self.transcript_progress.emit(s, d),
             )
+            print("[MeetingCT] Transcription terminee.", flush=True)
         except Exception as e:
+            print(f"[MeetingCT] Echec avant transcription : {e}", flush=True)
             self.failed.emit(str(e))
             return
 

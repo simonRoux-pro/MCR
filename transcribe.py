@@ -8,11 +8,17 @@ _model = None
 def _get_model():
     global _model
     if _model is None:
+        print(
+            f"[MeetingCT] Chargement du modele Whisper '{CONFIG.whisper_model}' "
+            "(telecharge depuis Hugging Face au premier lancement, mis en cache ensuite)...",
+            flush=True,
+        )
         _model = WhisperModel(
             CONFIG.whisper_model,
             device=CONFIG.whisper_device,
             compute_type=CONFIG.whisper_compute,
         )
+        print("[MeetingCT] Modele Whisper charge.", flush=True)
     return _model
 
 
