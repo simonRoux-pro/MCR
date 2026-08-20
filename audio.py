@@ -148,7 +148,12 @@ class AudioRecorder:
                 continue
             if self.system_audio_active:
                 try:
-                    sys_block = self._sys_q.get(timeout=0.1)
+                    # get_nowait (pas de timeout) : une fois l'enregistrement
+                    # arrete, le thread son systeme ne produit plus rien, et
+                    # attendre meme 0.1s par bloc restant a vider fait exploser
+                    # le temps d'arret (des centaines de blocs en attente ->
+                    # des dizaines de secondes d'attente cumulee pour rien).
+                    sys_block = self._sys_q.get_nowait()
                     block = _mix_blocks(mic_block, sys_block)
                 except queue.Empty:
                     block = mic_block   # rien de neuf cote son systeme sur ce cycle
