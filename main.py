@@ -1,6 +1,24 @@
 import sys
 import os
+import socket
 import tempfile
+
+# Force IPv4 pour toutes les connexions reseau de l'appli (Hugging Face,
+# Ollama, SMTP...). Certains reseaux ont un IPv6 degrade (connexion etablie
+# puis paquets perdus en cours de transfert, sans erreur explicite) : les
+# librairies HTTP tentent alors IPv6 en premier et restent bloquees sans
+# jamais basculer sur IPv4. Corrige un blocage reel constate au
+# telechargement du modele Whisper et lors d'un pull Ollama. A retirer si un
+# jour l'app doit tourner sur un reseau IPv6-only (rare en pratique).
+_original_getaddrinfo = socket.getaddrinfo
+
+
+def _getaddrinfo_ipv4_only(host, port, family=0, type=0, proto=0, flags=0):
+    return _original_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+
+
+socket.getaddrinfo = _getaddrinfo_ipv4_only
+
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QTextEdit, QLabel, QLineEdit, QMessageBox, QProgressBar,
