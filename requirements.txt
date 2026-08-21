@@ -11,8 +11,10 @@ numpy>=1.26.4
 # 1.1.0+ leve ce plafond (av>=11 seulement).
 faster-whisper>=1.1.0
 soundfile==0.12.1
-# Loopback WASAPI (capture du son systeme sur Windows uniquement, voir audio.py)
-soundcard==0.4.3; sys_platform == "win32"
+# Loopback WASAPI (capture du son systeme sur Windows uniquement, voir audio.py).
+# >= 0.4.6 obligatoire : les versions anterieures utilisent numpy.fromstring,
+# supprime dans numpy 2.x, ce qui fait echouer toute capture du son systeme.
+soundcard>=0.4.6; sys_platform == "win32"
 ollama==0.3.3
 httpx==0.27.2
 PySide6>=6.7.2

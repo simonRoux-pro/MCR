@@ -240,3 +240,21 @@ def test_le_niveau_sonore_distingue_silence_et_vrai_son():
     rec._sys_q.put(np.full((100, 1), 0.42, dtype=np.float32))
     rec._absorber_file_systeme()
     assert rec._niveau_sys_max == pytest.approx(0.42)
+
+
+def test_capture_systeme_interrompue_ne_meurt_pas_en_silence():
+    """Une erreur pendant la capture (ex. incompatibilite soundcard/numpy)
+    doit etre signalee et faire basculer proprement en micro seul, jamais
+    s'arreter sans le moindre message."""
+    rec = AudioRecorder()
+    rec.system_audio_active = True
+    enregistreur = MagicMock()
+    enregistreur.record.side_effect = ValueError("The binary mode of fromstring is removed")
+
+    with patch("builtins.print") as trace:
+        rec._poll_windows_loopback(enregistreur)
+
+    assert rec.system_audio_active is False          # repli micro seul
+    messages = " ".join(str(a) for appel in trace.call_args_list for a in appel.args)
+    assert "INTERROMPUE" in messages
+    assert "fromstring" in messages                  # la cause reelle est remontee

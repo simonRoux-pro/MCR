@@ -201,8 +201,17 @@ class AudioRecorder:
         while not self._sys_stop.is_set():
             try:
                 block = recorder.record(numframes=blocksize)
-            except Exception:
-                break
+            except Exception as e:
+                # Ne JAMAIS mourir en silence : c'est ce qui masquait une
+                # incompatibilite soundcard/numpy 2.x (numpy.fromstring
+                # supprime), ou la capture s'arretait des la premiere lecture
+                # sans le moindre message.
+                print(f"[MeetingCT] Capture du son systeme INTERROMPUE "
+                      f"({type(e).__name__}: {e}). Le reste de l'enregistrement "
+                      f"se fera au micro seul. Diagnostic : python diag_audio.py",
+                      flush=True)
+                self.system_audio_active = False
+                return
             self._sys_q.put(block)
 
     def _absorber_file_systeme(self):
