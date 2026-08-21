@@ -241,7 +241,9 @@ a `qwen2.5:3b` dans `config.py`.
 | "Impossible de contacter Ollama..." | Ollama n'est pas lance | `ollama serve`, puis reessayer |
 | "Le modele Ollama 'xxx' n'est pas installe" | Modele pas encore telecharge | `ollama pull <modele>` (voir `config.py`) |
 | Pas de son enregistre / erreur au demarrage de l'enregistrement | Pas de micro detecte, ou peripherique deja utilise | Verifier le micro par defaut du systeme, ou utiliser le mode fichier en attendant |
-| Statut "micro uniquement" (les autres participants ne sont pas dans le CR) | Le son systeme n'a pas pu etre capte | Windows/Linux : verifier qu'aucune erreur peripherique n'est remontee. macOS : installer [BlackHole](https://github.com/ExistentialAudio/BlackHole) (voir section dediee) |
+| Statut "micro uniquement" (les autres participants ne sont pas dans le CR) | Le son systeme n'a pas pu etre capte | Lancer `python diag_audio.py` : il indique le peripherique retenu et mesure le son reellement capte. macOS : installer [BlackHole](https://github.com/ExistentialAudio/BlackHole) (voir section dediee) |
+| Message "la boucle audio tourne mais n'a capte QUE DU SILENCE" a l'arret | Le son ne sort pas sur le peripherique de sortie **par defaut** de Windows (la boucle n'ecoute que celui-la) | Parametres > Systeme > Son : verifier le peripherique de sortie par defaut, puis `python diag_audio.py` en laissant jouer une video |
+| "Envoi par mail impossible : le serveur d'envoi (SMTP) n'est pas configure" | Aucun serveur SMTP renseigne (l'envoi mail est optionnel) | Renseigner `smtp_host` / `smtp_user` / `smtp_password` dans `config.py` ou `config_local.py`. Sans cela, le CR reste exportable en `.txt` et `.md` |
 | Transcription tres lente | Modele `medium` sur une machine modeste | Passer a `whisper_model = "base"` dans `config.py` |
 | Envoi mail en echec | SMTP non configure ou identifiants invalides | Renseigner `smtp_host`/`smtp_user`/`smtp_password` dans `config.py` ou `config_local.py` |
 

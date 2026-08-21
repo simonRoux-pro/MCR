@@ -4,8 +4,68 @@ import sys
 import types
 from unittest.mock import patch, MagicMock
 import numpy as np
+import pytest
 
-from audio import AudioRecorder, find_loopback_device_sounddevice, _mix_blocks, _en_colonne
+from audio import (AudioRecorder, find_loopback_device_sounddevice, _mix_blocks,
+                   _en_colonne, trouver_loopback_windows)
+
+
+class FauxPeripherique:
+    """Imite un peripherique soundcard (id, name, isloopback)."""
+
+    def __init__(self, id, name, isloopback=False):
+        self.id = id
+        self.name = name
+        self.isloopback = isloopback
+
+
+def _faux_soundcard(micros):
+    sc = MagicMock()
+    sc.all_microphones.return_value = micros
+    return sc
+
+
+# --- Selection du peripherique de boucle Windows ----------------------------
+
+def test_boucle_choisie_par_identifiant_meme_si_un_micro_porte_le_meme_nom():
+    """Cas reel a l'origine du bug : avec un casque, la sortie et le micro
+    portent le MEME nom. sc.get_microphone(nom) renvoyait alors le micro au
+    lieu de la boucle (on enregistrait deux fois sa propre voix). La selection
+    doit se faire sur les peripheriques marques isloopback, par identifiant."""
+    haut_parleur = FauxPeripherique("{0.0.0}-casque", "Casque Jabra")
+    micros = [
+        FauxPeripherique("{0.0.0}-casque", "Casque Jabra", isloopback=True),
+        FauxPeripherique("{0.0.1}-micro", "Casque Jabra"),   # vrai micro, meme nom
+    ]
+    choisi = trouver_loopback_windows(_faux_soundcard(micros), haut_parleur)
+    assert choisi.isloopback is True
+    assert choisi.id == "{0.0.0}-casque"
+
+
+def test_boucle_choisie_par_nom_si_identifiant_different():
+    haut_parleur = FauxPeripherique("id-sortie", "Haut-parleurs")
+    micros = [
+        FauxPeripherique("id-autre", "Ecran HDMI", isloopback=True),
+        FauxPeripherique("id-boucle", "Haut-parleurs", isloopback=True),
+    ]
+    choisi = trouver_loopback_windows(_faux_soundcard(micros), haut_parleur)
+    assert choisi.id == "id-boucle"
+
+
+def test_repli_sur_la_premiere_boucle_disponible():
+    haut_parleur = FauxPeripherique("id-inconnu", "Sortie inconnue")
+    micros = [
+        FauxPeripherique("id-b1", "Ecran HDMI", isloopback=True),
+        FauxPeripherique("id-micro", "Micro USB"),
+    ]
+    choisi = trouver_loopback_windows(_faux_soundcard(micros), haut_parleur)
+    assert choisi.id == "id-b1"
+
+
+def test_aucune_boucle_disponible_retourne_none():
+    haut_parleur = FauxPeripherique("id-sortie", "Haut-parleurs")
+    micros = [FauxPeripherique("id-micro", "Micro USB")]   # que des micros reels
+    assert trouver_loopback_windows(_faux_soundcard(micros), haut_parleur) is None
 
 
 def test_detecte_la_source_monitor_sur_linux():
@@ -53,21 +113,23 @@ def test_mix_blocks_gere_des_blocs_de_tailles_differentes():
     assert len(mixed) == 2
 
 
-def test_loopback_windows_utilise_soundcard_include_loopback():
-    """Verifie le cablage vers soundcard.get_microphone(..., include_loopback=True)
-    sur Windows, sans avoir de vraie machine Windows : on injecte un faux module
-    `soundcard` dans sys.modules."""
-    fake_recorder = MagicMock()
+def test_loopback_windows_ouvre_bien_le_peripherique_de_boucle():
+    """Cablage complet sur Windows, sans machine Windows reelle : on injecte
+    un faux module `soundcard`. Le peripherique ouvert doit etre la BOUCLE
+    (isloopback), pas le micro reel qui porte le meme nom."""
     fake_recorder_cm = MagicMock()
-    fake_recorder_cm.__enter__ = MagicMock(return_value=fake_recorder)
+    fake_recorder_cm.__enter__ = MagicMock(return_value=MagicMock())
     fake_recorder_cm.__exit__ = MagicMock(return_value=False)
 
-    fake_mic = MagicMock()
-    fake_mic.recorder.return_value = fake_recorder_cm
+    boucle = FauxPeripherique("id-casque", "Casque Jabra", isloopback=True)
+    boucle.recorder = MagicMock(return_value=fake_recorder_cm)
+    micro_reel = FauxPeripherique("id-micro", "Casque Jabra")
+    micro_reel.recorder = MagicMock()
 
     fake_soundcard = types.ModuleType("soundcard")
-    fake_soundcard.default_speaker = MagicMock(return_value=MagicMock(name="Haut-parleurs"))
-    fake_soundcard.get_microphone = MagicMock(return_value=fake_mic)
+    fake_soundcard.default_speaker = MagicMock(
+        return_value=FauxPeripherique("id-casque", "Casque Jabra"))
+    fake_soundcard.all_microphones = MagicMock(return_value=[boucle, micro_reel])
 
     recorder = AudioRecorder()
     with patch.dict(sys.modules, {"soundcard": fake_soundcard}), \
@@ -75,9 +137,9 @@ def test_loopback_windows_utilise_soundcard_include_loopback():
         started = recorder._start_windows_loopback()
 
     assert started is True
-    fake_soundcard.get_microphone.assert_called_once()
-    assert fake_soundcard.get_microphone.call_args.kwargs["include_loopback"] is True
-    fake_mic.recorder.assert_called_once()
+    boucle.recorder.assert_called_once()      # c'est bien la boucle qui est ouverte
+    micro_reel.recorder.assert_not_called()   # et surtout pas le micro reel
+    assert fake_soundcard.all_microphones.call_args.kwargs["include_loopback"] is True
 
     recorder._sys_stop.set()   # evite de laisser un thread de poll tourner apres le test
 
@@ -163,3 +225,18 @@ def test_mixage_de_blocs_de_tailles_differentes_via_le_tampon():
     assert mixe.shape == (4, 1)
     assert np.allclose(mixe[:3], 0.1 + 0.2)   # 3 premiers : micro + bloc systeme 1
     assert np.allclose(mixe[3], 0.1 + 0.4)    # 4e : la suite du tampon, rien de perdu
+
+
+def test_le_niveau_sonore_distingue_silence_et_vrai_son():
+    """soundcard renvoie des ZEROS quand rien ne joue : compter les
+    echantillons ne suffit pas a savoir si du son a ete capte, il faut
+    mesurer le niveau."""
+    rec = AudioRecorder()
+    rec._sys_q.put(np.zeros((100, 1), dtype=np.float32))
+    rec._absorber_file_systeme()
+    assert rec._frames_sys_recues == 100     # des echantillons, mais...
+    assert rec._niveau_sys_max == 0.0        # ...que du silence
+
+    rec._sys_q.put(np.full((100, 1), 0.42, dtype=np.float32))
+    rec._absorber_file_systeme()
+    assert rec._niveau_sys_max == pytest.approx(0.42)

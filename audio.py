@@ -24,6 +24,33 @@ def find_loopback_device_sounddevice():
     return None
 
 
+def trouver_loopback_windows(sc, haut_parleur):
+    """Choisit le peripherique de boucle (loopback) correspondant a la sortie
+    audio par defaut, parmi ceux exposes par la librairie `soundcard`.
+
+    On ne peut PAS utiliser sc.get_microphone(nom, include_loopback=True) :
+    en interne, cette fonction indexe les peripheriques par nom dans un
+    dictionnaire. Or, avec un casque, la sortie et le micro portent souvent le
+    meme nom : l'entree loopback est alors ecrasee par le vrai micro, et la
+    fonction renvoie le MICRO au lieu de la boucle (on enregistre deux fois sa
+    propre voix, jamais les autres participants).
+
+    On selectionne donc explicitement parmi les peripheriques marques
+    `isloopback`, en privilegiant l'identifiant unique de la sortie par defaut.
+    Retourne None si aucune boucle n'est disponible."""
+    boucles = [m for m in sc.all_microphones(include_loopback=True)
+               if getattr(m, "isloopback", False)]
+    if not boucles:
+        return None
+    for candidat in boucles:                          # 1. identifiant exact (fiable)
+        if candidat.id == haut_parleur.id:
+            return candidat
+    for candidat in boucles:                          # 2. a defaut, meme nom
+        if candidat.name == haut_parleur.name:
+            return candidat
+    return boucles[0]                                 # 3. sinon, la premiere boucle
+
+
 def _mix_blocks(mic_block, sys_block):
     """Mixe un bloc micro (ma voix) et un bloc son systeme (les autres
     participants) en sommant les deux pistes, puis ecrete pour eviter la
@@ -80,6 +107,7 @@ class AudioRecorder:
         self._sys_tampon = np.zeros((0, 1), dtype=np.float32)
         self._frames_sys_recues = 0
         self._frames_sys_melangees = 0
+        self._niveau_sys_max = 0.0
         self.system_audio_active = False
 
     def _mic_callback(self, indata, frames, time, status):
@@ -99,6 +127,7 @@ class AudioRecorder:
         self._sys_tampon = np.zeros((0, 1), dtype=np.float32)
         self._frames_sys_recues = 0
         self._frames_sys_melangees = 0
+        self._niveau_sys_max = 0.0
         self._writer = sf.SoundFile(
             path, mode="w",
             samplerate=CONFIG.samplerate,
@@ -146,11 +175,16 @@ class AudioRecorder:
         try:
             import soundcard as sc
             haut_parleur = sc.default_speaker()
-            mic = sc.get_microphone(id=str(haut_parleur.name), include_loopback=True)
+            source = trouver_loopback_windows(sc, haut_parleur)
+            if source is None:
+                print("[MeetingCT] Loopback Windows indisponible : aucun peripherique "
+                      "de boucle trouve, micro seul.", flush=True)
+                return False
             # channels=None : on capte le nombre de canaux natif de la sortie
             # (souvent stereo) ; le mixage ramene ensuite en mono proprement.
-            self._sys_recorder_cm = mic.recorder(samplerate=CONFIG.samplerate, channels=None)
+            self._sys_recorder_cm = source.recorder(samplerate=CONFIG.samplerate, channels=None)
             recorder = self._sys_recorder_cm.__enter__()
+            haut_parleur = source   # pour le message ci-dessous : le vrai peripherique retenu
         except Exception as e:
             print(f"[MeetingCT] Loopback Windows indisponible ({type(e).__name__}: {e}), micro seul.", flush=True)
             self._sys_recorder_cm = None
@@ -180,6 +214,11 @@ class AudioRecorder:
             except queue.Empty:
                 return
             self._frames_sys_recues += len(bloc)
+            if len(bloc):
+                # Niveau sonore reel : soundcard renvoie des zeros quand rien
+                # ne joue, donc compter les echantillons ne suffit pas a savoir
+                # si du son a vraiment ete capte.
+                self._niveau_sys_max = max(self._niveau_sys_max, float(np.abs(bloc).max()))
             self._sys_tampon = np.concatenate([self._sys_tampon, bloc])
 
     def _bloc_systeme(self, n):
@@ -255,12 +294,13 @@ class AudioRecorder:
 
         if self.system_audio_active:
             secondes = self._frames_sys_recues / CONFIG.samplerate
-            print(f"[MeetingCT] Son systeme : {self._frames_sys_recues} echantillons recus "
-                  f"(~{secondes:.0f} s), {self._frames_sys_melangees} melanges au micro.", flush=True)
-            if self._frames_sys_recues == 0:
-                print("[MeetingCT] ATTENTION : capture systeme active mais AUCUN son recu. "
-                      "Verifier que le son (visio, video...) sort bien sur le peripherique "
-                      "de sortie par defaut de Windows.", flush=True)
+            print(f"[MeetingCT] Son systeme : ~{secondes:.0f} s captees, "
+                  f"niveau sonore max {self._niveau_sys_max:.3f} "
+                  f"({self._frames_sys_melangees} echantillons melangees au micro).", flush=True)
+            if self._niveau_sys_max < 0.001:
+                print("[MeetingCT] ATTENTION : la boucle audio tourne mais n'a capte QUE DU SILENCE. "
+                      "Verifier que le son (visio, video...) sort bien sur le peripherique de sortie "
+                      "PAR DEFAUT de Windows. Diagnostic detaille : python diag_audio.py", flush=True)
 
         print("[MeetingCT] audio.stop() : termine.", flush=True)
         return self._path
