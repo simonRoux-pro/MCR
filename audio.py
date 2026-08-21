@@ -33,6 +33,20 @@ def _mix_blocks(mic_block, sys_block):
     return np.clip(mixed, -1.0, 1.0)
 
 
+def _en_colonne(bloc):
+    """Normalise un bloc audio en colonne mono float32 de forme (n, 1), quel
+    que soit le format livre par la source : mono 1D, mono (n, 1), ou stereo
+    (n, 2) ramene en mono par moyenne des canaux. Indispensable car le micro
+    (sounddevice) et le loopback Windows (soundcard) ne livrent pas leurs
+    echantillons sous la meme forme."""
+    bloc = np.asarray(bloc, dtype=np.float32)
+    if bloc.ndim == 1:
+        return bloc[:, None]
+    if bloc.shape[1] > 1:
+        return bloc.mean(axis=1, keepdims=True)
+    return bloc
+
+
 class AudioRecorder:
     """Enregistre le micro et, si possible, le son systeme (voix des AUTRES
     participants en visio Teams/Skype/Meet) en simultane, mixe les deux
@@ -63,6 +77,9 @@ class AudioRecorder:
         self._drain_thread = None
         self._writer = None
         self._path = None
+        self._sys_tampon = np.zeros((0, 1), dtype=np.float32)
+        self._frames_sys_recues = 0
+        self._frames_sys_melangees = 0
         self.system_audio_active = False
 
     def _mic_callback(self, indata, frames, time, status):
@@ -76,6 +93,12 @@ class AudioRecorder:
     def start(self, path: str):
         self._path = path
         self._recording = True
+        # Etat remis a neuf a chaque enregistrement (l'instance est reutilisee)
+        self._mic_q = queue.Queue()
+        self._sys_q = queue.Queue()
+        self._sys_tampon = np.zeros((0, 1), dtype=np.float32)
+        self._frames_sys_recues = 0
+        self._frames_sys_melangees = 0
         self._writer = sf.SoundFile(
             path, mode="w",
             samplerate=CONFIG.samplerate,
@@ -102,6 +125,7 @@ class AudioRecorder:
             return True
         device = find_loopback_device_sounddevice()
         if device is None:
+            print("[MeetingCT] Son systeme NON capte : aucune source loopback trouvee, micro seul.", flush=True)
             return False
         try:
             self._sys_stream = sd.InputStream(
@@ -111,18 +135,24 @@ class AudioRecorder:
                 callback=self._sys_callback,
             )
             self._sys_stream.start()
+            print(f"[MeetingCT] Capture du son systeme active (source : {sd.query_devices(device)['name']}).", flush=True)
             return True
-        except Exception:
+        except Exception as e:
+            print(f"[MeetingCT] Son systeme NON capte (echec ouverture source : {e}), micro seul.", flush=True)
             self._sys_stream = None
             return False
 
     def _start_windows_loopback(self):
         try:
             import soundcard as sc
-            mic = sc.get_microphone(id=str(sc.default_speaker().name), include_loopback=True)
-            self._sys_recorder_cm = mic.recorder(samplerate=CONFIG.samplerate, channels=CONFIG.channels)
+            haut_parleur = sc.default_speaker()
+            mic = sc.get_microphone(id=str(haut_parleur.name), include_loopback=True)
+            # channels=None : on capte le nombre de canaux natif de la sortie
+            # (souvent stereo) ; le mixage ramene ensuite en mono proprement.
+            self._sys_recorder_cm = mic.recorder(samplerate=CONFIG.samplerate, channels=None)
             recorder = self._sys_recorder_cm.__enter__()
-        except Exception:
+        except Exception as e:
+            print(f"[MeetingCT] Loopback Windows indisponible ({type(e).__name__}: {e}), micro seul.", flush=True)
             self._sys_recorder_cm = None
             return False
         self._sys_stop.clear()
@@ -130,6 +160,7 @@ class AudioRecorder:
             target=self._poll_windows_loopback, args=(recorder,), daemon=True
         )
         self._sys_thread.start()
+        print(f"[MeetingCT] Capture du son systeme active (loopback Windows sur : {haut_parleur.name}).", flush=True)
         return True
 
     def _poll_windows_loopback(self, recorder, blocksize=1024):
@@ -140,23 +171,39 @@ class AudioRecorder:
                 break
             self._sys_q.put(block)
 
+    def _absorber_file_systeme(self):
+        """Vide la file du son systeme dans le tampon continu, sans jamais
+        attendre (get_nowait : pas de blocage a l'arret de l'enregistrement)."""
+        while True:
+            try:
+                bloc = _en_colonne(self._sys_q.get_nowait())
+            except queue.Empty:
+                return
+            self._frames_sys_recues += len(bloc)
+            self._sys_tampon = np.concatenate([self._sys_tampon, bloc])
+
+    def _bloc_systeme(self, n):
+        """Extrait exactement n echantillons du tampon systeme, completes par
+        du silence si le tampon n'en contient pas assez. Le reste du tampon
+        est conserve pour les blocs suivants : contrairement a un appariement
+        bloc-a-bloc, aucune hypothese sur les tailles de blocs des deux
+        sources, et aucun echantillon systeme n'est jamais jete."""
+        pris = self._sys_tampon[:n]
+        self._sys_tampon = self._sys_tampon[n:]
+        self._frames_sys_melangees += len(pris)
+        if len(pris) < n:
+            pris = np.concatenate([pris, np.zeros((n - len(pris), 1), dtype=np.float32)])
+        return pris
+
     def _drain(self):
         while self._recording or not self._mic_q.empty():
             try:
-                mic_block = self._mic_q.get(timeout=0.5)
+                mic_block = _en_colonne(self._mic_q.get(timeout=0.5))
             except queue.Empty:
                 continue
             if self.system_audio_active:
-                try:
-                    # get_nowait (pas de timeout) : une fois l'enregistrement
-                    # arrete, le thread son systeme ne produit plus rien, et
-                    # attendre meme 0.1s par bloc restant a vider fait exploser
-                    # le temps d'arret (des centaines de blocs en attente ->
-                    # des dizaines de secondes d'attente cumulee pour rien).
-                    sys_block = self._sys_q.get_nowait()
-                    block = _mix_blocks(mic_block, sys_block)
-                except queue.Empty:
-                    block = mic_block   # rien de neuf cote son systeme sur ce cycle
+                self._absorber_file_systeme()
+                block = _mix_blocks(mic_block, self._bloc_systeme(len(mic_block)))
             else:
                 block = mic_block
             self._writer.write(block)   # ecrit sur disque immediatement
@@ -205,5 +252,15 @@ class AudioRecorder:
 
         if self._writer:
             self._writer.close()
+
+        if self.system_audio_active:
+            secondes = self._frames_sys_recues / CONFIG.samplerate
+            print(f"[MeetingCT] Son systeme : {self._frames_sys_recues} echantillons recus "
+                  f"(~{secondes:.0f} s), {self._frames_sys_melangees} melanges au micro.", flush=True)
+            if self._frames_sys_recues == 0:
+                print("[MeetingCT] ATTENTION : capture systeme active mais AUCUN son recu. "
+                      "Verifier que le son (visio, video...) sort bien sur le peripherique "
+                      "de sortie par defaut de Windows.", flush=True)
+
         print("[MeetingCT] audio.stop() : termine.", flush=True)
         return self._path

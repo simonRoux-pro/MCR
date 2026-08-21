@@ -5,7 +5,7 @@ import types
 from unittest.mock import patch, MagicMock
 import numpy as np
 
-from audio import AudioRecorder, find_loopback_device_sounddevice, _mix_blocks
+from audio import AudioRecorder, find_loopback_device_sounddevice, _mix_blocks, _en_colonne
 
 
 def test_detecte_la_source_monitor_sur_linux():
@@ -89,3 +89,77 @@ def test_loopback_windows_indisponible_bascule_sans_erreur():
     with patch("audio.platform.system", return_value="Windows"):
         started = recorder._start_windows_loopback()
     assert started is False
+
+
+# --- Normalisation des blocs et tampon continu du son systeme ---------------
+# Le micro (sounddevice) et le loopback Windows (soundcard) ne livrent pas
+# leurs echantillons sous la meme forme ni avec les memes tailles de blocs.
+
+def test_en_colonne_normalise_les_trois_formats():
+    mono_1d = np.array([0.1, 0.2, 0.3], dtype=np.float32)
+    assert _en_colonne(mono_1d).shape == (3, 1)
+
+    mono_colonne = np.array([[0.1], [0.2]], dtype=np.float32)
+    assert _en_colonne(mono_colonne).shape == (2, 1)
+
+    stereo = np.array([[0.2, 0.4], [0.6, 0.8]], dtype=np.float32)
+    ramene = _en_colonne(stereo)
+    assert ramene.shape == (2, 1)
+    assert np.allclose(ramene, [[0.3], [0.7]])   # moyenne des deux canaux
+
+
+def test_le_tampon_systeme_ne_perd_aucun_echantillon():
+    """Coeur du correctif : des blocs systeme de taille differente du micro
+    ne doivent plus etre tronques (l'ancien appariement bloc-a-bloc jetait
+    le surplus a chaque bloc)."""
+    rec = AudioRecorder()
+    rec.system_audio_active = True
+
+    # 3 blocs systeme de 100 echantillons, consommes par blocs micro de 128
+    for i in range(3):
+        rec._sys_q.put(np.full((100, 1), i + 1, dtype=np.float32))
+    rec._absorber_file_systeme()
+
+    assert rec._frames_sys_recues == 300
+    assert len(rec._sys_tampon) == 300
+
+    premier = rec._bloc_systeme(128)
+    assert len(premier) == 128
+    # Continuite : on retrouve la fin du bloc 1 puis le debut du bloc 2
+    assert premier[99][0] == 1.0 and premier[100][0] == 2.0
+
+    second = rec._bloc_systeme(128)
+    assert len(second) == 128
+    assert rec._frames_sys_melangees == 256
+    assert len(rec._sys_tampon) == 44   # le reste est conserve, pas jete
+
+
+def test_le_tampon_systeme_complete_par_du_silence_si_insuffisant():
+    """Si le son systeme prend du retard, on complete par du silence plutot
+    que de desynchroniser les deux pistes."""
+    rec = AudioRecorder()
+    rec._sys_q.put(np.full((10, 1), 0.5, dtype=np.float32))
+    rec._absorber_file_systeme()
+
+    bloc = rec._bloc_systeme(25)
+    assert bloc.shape == (25, 1)
+    assert np.allclose(bloc[:10], 0.5)
+    assert np.allclose(bloc[10:], 0.0)       # silence de complement
+    assert rec._frames_sys_melangees == 10   # seuls les vrais echantillons comptent
+
+
+def test_mixage_de_blocs_de_tailles_differentes_via_le_tampon():
+    """Verification de bout en bout : bloc micro 1D de 4 echantillons et
+    source systeme stereo par blocs de 3 -> mixage correct, sans perte."""
+    rec = AudioRecorder()
+    rec.system_audio_active = True
+    rec._sys_q.put(np.full((3, 2), 0.2, dtype=np.float32))   # stereo
+    rec._sys_q.put(np.full((3, 2), 0.4, dtype=np.float32))
+    rec._absorber_file_systeme()
+
+    mic = _en_colonne(np.full(4, 0.1, dtype=np.float32))
+    mixe = _mix_blocks(mic, rec._bloc_systeme(len(mic)))
+
+    assert mixe.shape == (4, 1)
+    assert np.allclose(mixe[:3], 0.1 + 0.2)   # 3 premiers : micro + bloc systeme 1
+    assert np.allclose(mixe[3], 0.1 + 0.4)    # 4e : la suite du tampon, rien de perdu
