@@ -38,10 +38,20 @@ def verdict(mesure: float, quoi: str):
 def diag_windows():
     import soundcard as sc
 
-    version = getattr(sc, "__version__", "inconnue")
+    # soundcard n'expose pas __version__ : il faut lire les metadonnees
+    # d'installation du paquet.
+    try:
+        from importlib.metadata import version as version_paquet
+        version = version_paquet("soundcard")
+    except Exception:
+        version = "inconnue"
+
     print(f"soundcard {version} / numpy {np.__version__}")
-    if tuple(int(x) for x in str(version).split(".")[:3] if x.isdigit()) < (0, 4, 6) \
-            and int(np.__version__.split(".")[0]) >= 2:
+    try:
+        trop_ancienne = tuple(int(x) for x in version.split(".")[:3]) < (0, 4, 6)
+    except ValueError:
+        trop_ancienne = False   # version illisible : ne pas alerter a tort
+    if trop_ancienne and int(np.__version__.split(".")[0]) >= 2:
         print("  ATTENTION : soundcard < 0.4.6 est incompatible avec numpy 2.x "
               "(numpy.fromstring supprime) : la capture du son systeme echouera.")
         print("  Corriger avec : pip install -r requirements.txt\n")
