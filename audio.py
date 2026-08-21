@@ -1,10 +1,18 @@
 import platform
 import queue
 import threading
+import warnings
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
 from config import CONFIG
+
+# WASAPI signale une "data discontinuity" chaque fois que la sortie audio
+# passe d'inactive a active (silence dans la visio, video en pause...). C'est
+# frequent et sans consequence ici : le tampon absorbe simplement ce qui
+# arrive. Sans ce filtre, une reunion de 2 h noierait le terminal sous des
+# milliers de lignes identiques.
+warnings.filterwarnings("ignore", message="data discontinuity in recording")
 
 
 def find_loopback_device_sounddevice():
