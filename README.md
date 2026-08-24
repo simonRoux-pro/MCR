@@ -10,7 +10,9 @@ par mail si tu choisis de l'envoyer.
    visio Teams/Skype/Meet) simultanement, **ou** chargement d'un fichier audio
    existant (mode fichier)
 2. Transcription locale (faster-whisper, tourne sur CPU)
-3. Generation du compte-rendu (LLM local via Ollama)
+3. Generation du compte-rendu (LLM local via Ollama) — **optionnelle** : un
+   bouton dedie permet de s'arreter a la transcription pour recuperer le texte
+   rapidement et rediger le CR ailleurs
 4. Consultation / export en `.txt` ou `.md` / envoi par mail (seule sortie reseau)
 
 Les longues reunions (2 h et plus) sont gerees de bout en bout :
@@ -137,12 +139,23 @@ C'est aussi le moyen le plus simple de **tester l'outil de bout en bout** sans
 materiel audio : prends n'importe quel enregistrement audio existant (memo
 vocal, extrait de reunion passee...) et charge-le.
 
-### Ensuite : consulter, exporter ou envoyer le compte-rendu
+### Deux facons d'arreter l'enregistrement
 
-Une fois le compte-rendu genere, trois actions possibles (non exclusives) :
+| Bouton | Ce qu'il fait | Quand l'utiliser |
+|---|---|---|
+| **Arreter et generer le CR** | Transcription **puis** compte-rendu par le LLM local | Pour obtenir directement un CR structure |
+| **Arreter - transcription seule** | Transcription uniquement, **aucun appel au LLM** | Pour recuperer le texte rapidement et rediger le CR ailleurs. Ne necessite pas qu'Ollama soit installe ou lance |
 
-- **Exporter en `.txt`** ou **Exporter en `.md`** : enregistre le CR dans un
-  fichier local, choisi via une boite de dialogue.
+Le mode "transcription seule" est nettement plus rapide : c'est la generation
+du compte-rendu qui prend du temps sur CPU, pas la transcription.
+
+### Ensuite : consulter, exporter ou envoyer
+
+- **Exporter la transcription (`.txt`)** : le texte brut, disponible des que la
+  transcription est terminee — y compris en mode transcription seule, ou si la
+  generation du CR a echoue.
+- **Exporter le CR en `.txt`** ou **en `.md`** : enregistre le compte-rendu dans
+  un fichier local, choisi via une boite de dialogue.
 - **Envoyer par mail** : renseigne un destinataire dans le champ prevu et
   clique sur "Envoyer par mail" (necessite d'avoir configure le SMTP, voir
   section Configuration). C'est la **seule** action qui fait sortir une

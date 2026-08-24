@@ -22,14 +22,16 @@ class Worker(QThread):
     summary_progress = Signal(int, int)          # etape, nb etapes
     transcribed = Signal(str)                    # transcription terminee (avant le CR)
     done = Signal(str, str)
+    transcript_only_done = Signal(str)           # mode transcription seule : termine, sans CR
     failed = Signal(str)                         # echec avant meme d'avoir une transcription
     summary_failed = Signal(str, str)            # transcription obtenue, mais echec du CR (ex : Ollama eteint)
 
-    def __init__(self, audio_path, from_file=False, recorder=None):
+    def __init__(self, audio_path, from_file=False, recorder=None, generer_cr=True):
         super().__init__()
         self.audio_path = audio_path
         self.from_file = from_file
         self.recorder = recorder   # si fourni, recorder.stop() est appele ici (hors thread UI)
+        self.generer_cr = generer_cr   # False : on s'arrete apres la transcription (pas de LLM)
 
     def run(self):
         try:
@@ -57,6 +59,13 @@ class Worker(QThread):
         # La transcription est acquise : on la remonte tout de suite. Sur une reunion
         # de 2 h, elle ne doit jamais etre perdue meme si la generation du CR echoue.
         self.transcribed.emit(transcript)
+
+        if not self.generer_cr:
+            # Mode transcription seule : on n'appelle pas le LLM (rapide, et
+            # aucun besoin qu'Ollama tourne). Le texte est traite ailleurs.
+            print("[MeetingCT] Mode transcription seule : pas de generation de CR.", flush=True)
+            self.transcript_only_done.emit(transcript)
+            return
 
         try:
             report = summarize(
@@ -87,9 +96,18 @@ class MainWindow(QMainWindow):
         self.btn_rec = QPushButton("Demarrer l'enregistrement")
         self.btn_stop = QPushButton("Arreter et generer le CR")
         self.btn_stop.setEnabled(False)
+        # Sortie rapide du texte seul : pas d'appel au LLM, donc pas besoin
+        # qu'Ollama tourne. Le CR est alors redige ailleurs.
+        self.btn_stop_texte = QPushButton("Arreter - transcription seule")
+        self.btn_stop_texte.setToolTip(
+            "Arrete l'enregistrement et produit uniquement la transcription, "
+            "sans generer de compte-rendu (plus rapide, ne necessite pas Ollama)."
+        )
+        self.btn_stop_texte.setEnabled(False)
         self.btn_load = QPushButton("Charger un fichier audio...")
         btns.addWidget(self.btn_rec)
         btns.addWidget(self.btn_stop)
+        btns.addWidget(self.btn_stop_texte)
         btns.addWidget(self.btn_load)
         layout.addLayout(btns)
 
@@ -115,10 +133,13 @@ class MainWindow(QMainWindow):
         layout.addLayout(mail_row)
 
         export_row = QHBoxLayout()
-        self.btn_export_txt = QPushButton("Exporter en .txt")
-        self.btn_export_md = QPushButton("Exporter en .md")
+        self.btn_export_transcript = QPushButton("Exporter la transcription (.txt)")
+        self.btn_export_txt = QPushButton("Exporter le CR (.txt)")
+        self.btn_export_md = QPushButton("Exporter le CR (.md)")
+        self.btn_export_transcript.setEnabled(False)
         self.btn_export_txt.setEnabled(False)
         self.btn_export_md.setEnabled(False)
+        export_row.addWidget(self.btn_export_transcript)
         export_row.addWidget(self.btn_export_txt)
         export_row.addWidget(self.btn_export_md)
         layout.addLayout(export_row)
@@ -127,8 +148,10 @@ class MainWindow(QMainWindow):
 
         self.btn_rec.clicked.connect(self.start_rec)
         self.btn_stop.clicked.connect(self.stop_rec)
+        self.btn_stop_texte.clicked.connect(self.stop_rec_transcription_seule)
         self.btn_load.clicked.connect(self.load_file)
         self.btn_send.clicked.connect(self.send_mail)
+        self.btn_export_transcript.clicked.connect(self.export_transcription)
         self.btn_export_txt.clicked.connect(self.export_txt)
         self.btn_export_md.clicked.connect(self.export_md)
 
@@ -143,15 +166,27 @@ class MainWindow(QMainWindow):
             )
         self.btn_rec.setEnabled(False)
         self.btn_stop.setEnabled(True)
+        self.btn_stop_texte.setEnabled(True)
         self.btn_load.setEnabled(False)
         self.progress.setValue(0)
 
     def stop_rec(self):
+        self._arreter(generer_cr=True)
+
+    def stop_rec_transcription_seule(self):
+        """Arrete l'enregistrement et produit uniquement la transcription :
+        aucun appel au LLM, donc pas besoin d'Ollama et resultat bien plus
+        rapide. Le compte-rendu est ensuite redige ailleurs."""
+        self._arreter(generer_cr=False)
+
+    def _arreter(self, generer_cr):
         # L'arret reel (recorder.stop()) se fait dans le Worker, pas ici : vider
         # le buffer audio sur disque peut prendre un moment, et on ne veut
         # jamais geler l'interface pendant ce temps.
         self.btn_stop.setEnabled(False)
-        self._start_worker(self.audio_path, from_file=False, recorder=self.recorder)
+        self.btn_stop_texte.setEnabled(False)
+        self._start_worker(self.audio_path, from_file=False,
+                           recorder=self.recorder, generer_cr=generer_cr)
 
     def load_file(self):
         """Mode fichier : charge un WAV/MP3 existant au lieu d'enregistrer le micro.
@@ -166,17 +201,20 @@ class MainWindow(QMainWindow):
         self.btn_load.setEnabled(False)
         self._start_worker(path, from_file=True)
 
-    def _start_worker(self, audio_path, from_file, recorder=None):
+    def _start_worker(self, audio_path, from_file, recorder=None, generer_cr=True):
+        suite = "" if generer_cr else " (transcription seule, sans compte-rendu)"
         self.status.setText(
-            "Transcription en cours... (peut durer plusieurs heures sur CPU ; le tout "
+            f"Transcription en cours...{suite} (peut durer plusieurs heures sur CPU ; le tout "
             "premier lancement telecharge aussi le modele Whisper, patience si connexion lente)"
         )
         self.progress.setValue(0)
-        self.worker = Worker(audio_path, from_file=from_file, recorder=recorder)
+        self.worker = Worker(audio_path, from_file=from_file, recorder=recorder,
+                             generer_cr=generer_cr)
         self.worker.transcript_progress.connect(self.on_transcript_progress)
         self.worker.summary_progress.connect(self.on_summary_progress)
         self.worker.transcribed.connect(self.on_transcribed)
         self.worker.done.connect(self.on_done)
+        self.worker.transcript_only_done.connect(self.on_transcript_only_done)
         self.worker.failed.connect(self.on_failed)
         self.worker.summary_failed.connect(self.on_summary_failed)
         self.worker.start()
@@ -194,6 +232,17 @@ class MainWindow(QMainWindow):
 
     def on_transcribed(self, transcript):
         self.txt_transcript.setPlainText(transcript)
+        # Des que la transcription existe, elle est exportable - meme si la
+        # generation du CR echoue ou n'a pas ete demandee.
+        self.btn_export_transcript.setEnabled(True)
+
+    def on_transcript_only_done(self, transcript):
+        """Mode transcription seule : termine sans passer par le LLM."""
+        self.txt_transcript.setPlainText(transcript)
+        self.status.setText("Transcription terminee (sans compte-rendu).")
+        self.progress.setValue(100)
+        self.btn_export_transcript.setEnabled(True)
+        self._reset_buttons()
 
     def on_done(self, transcript, report):
         self.txt_transcript.setPlainText(transcript)
@@ -201,6 +250,7 @@ class MainWindow(QMainWindow):
         self.status.setText("Termine.")
         self.progress.setValue(100)
         self.btn_send.setEnabled(True)
+        self.btn_export_transcript.setEnabled(True)
         self.btn_export_txt.setEnabled(True)
         self.btn_export_md.setEnabled(True)
         self._reset_buttons()
@@ -229,6 +279,22 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Erreur mail", str(e))
 
+    def export_transcription(self):
+        """Exporte le texte brut de la transcription, pour le reprendre
+        ailleurs (redaction du CR dans un autre outil)."""
+        from export import save_txt
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Exporter la transcription", "transcription.txt",
+            "Fichiers texte (*.txt)"
+        )
+        if not path:
+            return
+        try:
+            save_txt(path, self.txt_transcript.toPlainText())
+            self.status.setText(f"Transcription exportee vers {path}.")
+        except Exception as e:
+            QMessageBox.critical(self, "Erreur export", str(e))
+
     def export_txt(self):
         self._export(".txt", "Fichiers texte (*.txt)", save_as="txt")
 
@@ -254,12 +320,13 @@ class MainWindow(QMainWindow):
     def _reset_buttons(self):
         self.btn_rec.setEnabled(True)
         self.btn_stop.setEnabled(False)
+        self.btn_stop_texte.setEnabled(False)
         self.btn_load.setEnabled(True)
 
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     w = MainWindow()
-    w.resize(700, 800)
+    w.resize(1000, 800)   # 4 boutons d'action sur une ligne : besoin de largeur
     w.show()
     sys.exit(app.exec())
