@@ -164,6 +164,18 @@ def supprimer_session(identifiant: str):
     return {"supprime": True}
 
 
+@app.get("/api/sessions/{identifiant}/audio.webm")
+def telecharger_audio(identifiant: str):
+    """Audio brut recu par le serveur. Permet de VERIFIER par l'ecoute ce qui a
+    reellement ete enregistre : si le son de l'ordinateur manque ici, le
+    probleme est a la capture ; s'il y est, il est a la transcription."""
+    session = _session(identifiant)
+    if not session.audio.exists():
+        raise HTTPException(status_code=404, detail="Aucun audio pour cette session.")
+    return FileResponse(session.audio, media_type="audio/webm",
+                        filename="enregistrement.webm")
+
+
 @app.get("/api/sessions/{identifiant}/transcription.txt")
 def telecharger(identifiant: str):
     """Telechargement du texte en .txt."""

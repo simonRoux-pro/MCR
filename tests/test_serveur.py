@@ -118,3 +118,20 @@ def test_la_page_est_servie(client):
     assert page.status_code == 200
     assert "Transcription de reunion" in page.text
     assert client.get("/static/app.js").status_code == 200
+
+
+def test_telechargement_de_l_audio_recu(client):
+    """L'audio brut doit etre recuperable : c'est ce qui permet de verifier
+    par l'ecoute si le son de l'ordinateur a bien ete enregistre."""
+    identifiant = client.post("/api/sessions").json()["id"]
+    client.post(f"/api/sessions/{identifiant}/morceau", content=b"donnees-audio")
+
+    reponse = client.get(f"/api/sessions/{identifiant}/audio.webm")
+    assert reponse.status_code == 200
+    assert reponse.content == b"donnees-audio"
+    assert reponse.headers["content-type"] == "audio/webm"
+
+
+def test_audio_absent_donne_404(client):
+    identifiant = client.post("/api/sessions").json()["id"]
+    assert client.get(f"/api/sessions/{identifiant}/audio.webm").status_code == 404
