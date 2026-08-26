@@ -1,5 +1,5 @@
 @echo off
-REM Prepare un poste Windows : environnement Python + modele Ollama.
+REM Prepare un poste Windows : environnement Python + modele de transcription.
 REM A lancer une seule fois par machine, apres avoir clone le depot.
 
 echo == 1. Environnement Python ==
@@ -18,7 +18,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo == 2. Telechargement du modele Whisper (transcription, quelques centaines de Mo) ==
+echo == 2. Telechargement du modele Whisper (quelques centaines de Mo, une seule fois) ==
 python telecharge_modele.py
 if errorlevel 1 (
     echo Le telechargement du modele Whisper a echoue.
@@ -26,24 +26,8 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo == 3. Verification d'Ollama ==
-where ollama >nul 2>nul
-if errorlevel 1 (
-    echo Ollama n'est pas installe. Installe-le depuis https://ollama.com puis relance ce script.
-    exit /b 1
-)
-
-echo == 4. Telechargement du modele Ollama (plusieurs Go, une seule fois) ==
-ollama pull mistral
-if errorlevel 1 (
-    echo.
-    echo Le telechargement du modele a echoue ^(souvent une coupure reseau transitoire^).
-    echo L'environnement Python est pret, mais il manque le modele Ollama.
-    echo Relance simplement : ollama pull mistral
-    exit /b 1
-)
-
 echo.
-echo == Termine. Pour lancer l'application ==
+echo == Termine. Pour lancer le serveur ==
 echo   .venv\Scripts\activate.bat
-echo   python main.py
+echo   python serveur.py
+echo puis ouvrir http://127.0.0.1:8000 dans le navigateur

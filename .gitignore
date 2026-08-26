@@ -9,10 +9,12 @@ env/
 *.wav
 *.mp3
 *.m4a
+*.webm
 transcript.txt
+transcription.txt
 *.log
 
-# Modeles (jamais dans git, telecharges par Ollama / faster-whisper)
+# Modeles (jamais dans git, telecharges par telecharge_modele.py)
 models/
 *.bin
 *.gguf

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transcription de reunion</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main>
+  <h1>Transcription de reunion</h1>
+  <p class="sous-titre">
+    L'audio est transcrit sur le serveur, en local. Aucun service externe n'est appele.
+  </p>
+
+  <section class="carte">
+    <label class="case">
+      <input type="checkbox" id="sonSysteme" checked>
+      <span>
+        <strong>Capter aussi le son de l'ordinateur</strong> (voix des autres participants)
+        <small>
+          Le navigateur demandera quoi partager : choisis l'onglet ou l'ecran de la visio
+          et <strong>coche « Partager l'audio »</strong>. Sans cela, seul ton micro est enregistre.
+        </small>
+      </span>
+    </label>
+
+    <div class="boutons">
+      <button id="demarrer" class="principal">Demarrer l'enregistrement</button>
+      <button id="arreter" disabled>Arreter et transcrire</button>
+    </div>
+
+    <div id="etat" class="etat">Pret.</div>
+    <div class="jauge"><div id="jauge" class="jauge-remplissage"></div></div>
+  </section>
+
+  <section class="carte">
+    <div class="entete-resultat">
+      <h2>Transcription</h2>
+      <div class="boutons-resultat">
+        <button id="copier" disabled>Copier</button>
+        <button id="telecharger" disabled>Telecharger (.txt)</button>
+        <button id="effacer" disabled class="discret">Effacer du serveur</button>
+      </div>
+    </div>
+    <textarea id="texte" placeholder="Le texte apparaitra ici une fois la transcription terminee."></textarea>
+  </section>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>

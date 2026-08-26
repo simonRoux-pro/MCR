@@ -1,8 +1,8 @@
 # Tutoriel d'installation — Meeting-CT
 
-Guide pas a pas pour installer tous les prerequis et lancer l'application pour
-la premiere fois, destine a quelqu'un qui n'a jamais installe Python, Git ou
-Ollama. Pour la reference rapide (config, tests, depannage), voir le
+Guide pas a pas pour installer le serveur de transcription et l'utiliser dans
+le navigateur, destine a quelqu'un qui n'a jamais installe Python ou Git. Pour
+la reference rapide (configuration, tests, depannage), voir le
 [README principal](README.md).
 
 ---
@@ -37,55 +37,13 @@ Git sert a recuperer (cloner) le code du projet.
 
 1. Va sur [git-scm.com/downloads](https://git-scm.com/downloads) et
    telecharge l'installeur pour ton systeme.
-2. Lance l'installeur en laissant les options par defaut (elles conviennent
-   dans la grande majorite des cas).
+2. Lance l'installeur en laissant les options par defaut.
 3. Verifie l'installation :
    ```bash
    git --version
    ```
 
-## Etape 3 — Installer Ollama (moteur du compte-rendu)
-
-[![Ollama](https://img.shields.io/badge/Ollama-Telecharger-000000?logo=ollama&logoColor=white)](https://ollama.com)
-
-Ollama fait tourner le modele de langage **en local**, sans envoyer aucune
-donnee sur internet.
-
-1. Va sur [ollama.com](https://ollama.com) et telecharge l'installeur pour
-   ton systeme.
-2. Installe-le : sur Windows/macOS, Ollama se lance generalement tout seul en
-   arriere-plan apres l'installation (icone dans la barre systeme). Sur
-   Linux, lance-le manuellement avec `ollama serve` si besoin.
-3. Verifie qu'il tourne :
-   ```bash
-   ollama --version
-   ```
-
-Le modele de langage (`mistral` par defaut, quelques Go) sera telecharge a
-l'etape 6 par le script d'installation — pas besoin de le faire main.
-
-## Etape 4 — macOS uniquement : capter les autres participants (BlackHole)
-
-Sur Windows et Linux, l'application capte automatiquement le son des autres
-participants d'une visio (Teams/Skype/Meet) en plus de ton micro — rien a
-faire. **Sur macOS, une etape manuelle est necessaire**, car Apple ne permet
-pas nativement de "boucler" le son des haut-parleurs vers une application :
-
-1. Installe [BlackHole 2ch](https://github.com/ExistentialAudio/BlackHole)
-   (peripherique audio virtuel gratuit et open source).
-2. Ouvre l'utilitaire macOS **"Configuration audio et MIDI"**, cree un
-   **"Peripherique de sortie multiple"** combinant tes haut-parleurs/casque
-   habituels et BlackHole.
-3. Pendant tes visios, selectionne ce peripherique combine comme sortie audio
-   par defaut : tu entends toujours normalement, et BlackHole en recoit une
-   copie que l'application pourra enregistrer.
-
-Sans cette etape sur macOS, l'application enregistre uniquement ton micro
-(donc pas les autres participants) — voir la section "Capture du son des
-autres participants" du [README principal](README.md#capture-du-son-des-autres-participants-visio)
-pour plus de details.
-
-## Etape 5 — Recuperer le code du projet
+## Etape 3 — Recuperer le code du projet
 
 Ouvre un terminal a l'endroit ou tu veux installer le projet, puis :
 
@@ -94,7 +52,7 @@ git clone <URL_DU_DEPOT> meeting-ct
 cd meeting-ct
 ```
 
-## Etape 6 — Installer les dependances du projet
+## Etape 4 — Installer les dependances et le modele
 
 ### Linux / macOS
 ```bash
@@ -110,45 +68,47 @@ setup.bat
 Ce script :
 - cree un environnement Python isole (`.venv`), pour ne rien installer sur
   le systeme global ;
-- installe les librairies Python necessaires (faster-whisper, PySide6...) ;
-- pre-telecharge le modele Whisper pour la transcription (quelques centaines
-  de Mo, une seule fois) — relançable seul via `python telecharge_modele.py` ;
-- verifie qu'Ollama est bien installe puis telecharge le modele `mistral`
-  (quelques Go, la premiere fois seulement).
+- installe les librairies necessaires (faster-whisper, FastAPI...) ;
+- pre-telecharge le modele de transcription (quelques centaines de Mo, une
+  seule fois) — relançable seul via `python telecharge_modele.py`.
 
-Le script s'arrete et affiche une erreur claire des qu'une etape echoue (par
-exemple une coupure reseau pendant le telechargement du modele) plutot que de
-continuer silencieusement. Si tu ne vois pas le message final
-`== Termine. ==`, une etape a echoue : lis le message d'erreur juste au-dessus
-et relance simplement `setup.sh`/`setup.bat` (les etapes deja faites, comme
-un paquet Python deja installe, ne sont pas refaites inutilement).
+Le script s'arrete et affiche une erreur claire des qu'une etape echoue plutot
+que de continuer silencieusement. Si tu ne vois pas le message final
+`== Termine. ==`, lis le message d'erreur juste au-dessus et relance le script
+(les etapes deja faites ne sont pas refaites inutilement).
 
-Verifie que le modele est bien present avant de continuer :
-```bash
-ollama list
-```
-Tu dois voir `mistral` dans la liste. Sinon, relance `ollama pull mistral`.
-
-## Etape 7 — Lancer l'application
-
-Assure-toi qu'Ollama tourne (icone dans la barre systeme, ou `ollama serve`
-dans un terminal a part), puis :
+## Etape 5 — Lancer le serveur
 
 ### Linux / macOS
 ```bash
 source .venv/bin/activate
-python main.py
+python serveur.py
 ```
 
 ### Windows
 ```bat
 .venv\Scripts\activate.bat
-python main.py
+python serveur.py
 ```
 
-La fenetre de l'application s'ouvre. Pour la suite (enregistrer une reunion,
-charger un fichier audio, exporter ou envoyer le compte-rendu), suis la
-section **"Tutoriel : premiere utilisation"** du [README principal](README.md#4-tutoriel--premiere-utilisation).
+Laisse ce terminal ouvert : c'est lui qui fait tourner le serveur. Ouvre
+ensuite **http://127.0.0.1:8000** dans **Chrome ou Edge**.
+
+## Etape 6 — Enregistrer une premiere reunion
+
+1. Laisse coche **"Capter aussi le son de l'ordinateur"** si tu veux
+   enregistrer les autres participants d'une visio.
+2. Clique sur **"Demarrer l'enregistrement"** et **autorise le micro**.
+3. Le navigateur demande quoi partager : choisis **l'onglet de la visio** (ou
+   l'ecran entier) et surtout **coche « Partager l'audio »** en bas de la
+   fenetre de selection. Sans cette case, seul ton micro sera enregistre.
+   (La video n'est pas enregistree : elle est coupee immediatement, seul le son
+   est conserve.)
+4. Parle, laisse la reunion se derouler.
+5. Clique sur **"Arreter et transcrire"** : la transcription demarre, la barre
+   de progression avance, puis le texte s'affiche.
+6. **Copier** ou **Telecharger (.txt)** pour reprendre le texte ailleurs, et
+   **Effacer du serveur** quand tu n'en as plus besoin.
 
 ---
 
@@ -156,9 +116,10 @@ section **"Tutoriel : premiere utilisation"** du [README principal](README.md#4-
 
 | Symptome | Piste |
 |---|---|
-| `python` / `git` / `ollama` : commande introuvable | Redemarre le terminal (voire la machine) apres l'installation, la variable PATH doit se recharger |
+| `python` / `git` : commande introuvable | Redemarre le terminal (voire la machine) apres l'installation, la variable PATH doit se recharger |
 | `python --version` affiche une version 2.x | Utilise `python3` a la place de `python` (frequent sur macOS/Linux) |
-| Le script `setup.sh`/`setup.bat` echoue sur "Ollama n'est pas installe" | Reprends l'etape 3, puis relance le script |
-| Le script echoue pendant `pip install` (compilateur manquant, `metadata-generation-failed`) | `git pull` dans le dossier du projet (requirements.txt peut avoir ete corrige entre-temps), puis relance le script |
-| Le script echoue pendant `ollama pull mistral` (`wsarecv`, `max retries exceeded`...) | Coupure reseau transitoire pendant le telechargement (plusieurs Go) : relance juste `ollama pull mistral`, l'environnement Python est deja installe |
-| Autres erreurs une fois l'appli lancee | Voir la section **Depannage** du [README principal](README.md#10-depannage) |
+| Le script echoue pendant `pip install` (compilateur manquant) | `git pull` dans le dossier du projet, puis relance le script |
+| Le telechargement du modele est tres lent ou s'interrompt | Normal sur une connexion instable : relance `python telecharge_modele.py`, il reprend ou il s'est arrete |
+| La page ne s'ouvre pas | Verifie que le terminal du serveur est toujours ouvert et affiche bien `http://127.0.0.1:8000` |
+| Seul mon micro est enregistre | La case « Partager l'audio » n'a pas ete cochee au moment du partage, ou le navigateur n'est pas Chrome/Edge |
+| Autres erreurs | Voir la section **Depannage** du [README principal](README.md#10-depannage) |
