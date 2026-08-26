@@ -125,3 +125,39 @@ textarea {
   animation: clignote 1.2s infinite;
 }
 @keyframes clignote { 50% { opacity: .25; } }
+
+/* Niveaux sonores en direct : voir immediatement si une source est muette */
+.niveaux { margin-top: 1rem; }
+
+.ligne-niveau {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  margin-bottom: .5rem;
+}
+
+.nom-source {
+  flex: none;
+  width: 11rem;
+  font-size: .9rem;
+  color: var(--discret);
+}
+
+.vumetre {
+  flex: 1;
+  height: .55rem;
+  background: var(--bord);
+  border-radius: 1rem;
+  overflow: hidden;
+}
+
+.vumetre-remplissage {
+  height: 100%;
+  width: 0;
+  background: var(--discret);
+  border-radius: 1rem;
+  transition: width .08s linear, background-color .2s ease;
+}
+.vumetre-remplissage.actif { background: var(--vert); }
+
+.aide-niveau { color: var(--discret); font-size: .82rem; }

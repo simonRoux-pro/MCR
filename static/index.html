@@ -32,6 +32,21 @@
 
     <div id="etat" class="etat">Pret.</div>
     <div class="jauge"><div id="jauge" class="jauge-remplissage"></div></div>
+
+    <!-- Niveaux en direct : permet de voir immediatement si une source est muette -->
+    <div id="niveaux" class="niveaux" hidden>
+      <div class="ligne-niveau">
+        <span class="nom-source">Micro</span>
+        <div class="vumetre"><div id="niveauMicro" class="vumetre-remplissage"></div></div>
+      </div>
+      <div class="ligne-niveau" id="ligneSysteme" hidden>
+        <span class="nom-source">Son de l'ordinateur</span>
+        <div class="vumetre"><div id="niveauSysteme" class="vumetre-remplissage"></div></div>
+      </div>
+      <small class="aide-niveau">
+        Les barres doivent bouger quand quelqu'un parle. Une barre immobile = source muette.
+      </small>
+    </div>
   </section>
 
   <section class="carte">

@@ -8,6 +8,7 @@
 
 const DUREE_MORCEAU = 5000;   // envoi d'un morceau toutes les 5 s
 const INTERVALLE_SUIVI = 1000;
+const SEUIL_SILENCE = 0.01;   // en dessous : considere comme du silence
 
 const el = {
   demarrer: document.getElementById("demarrer"),
@@ -19,6 +20,10 @@ const el = {
   copier: document.getElementById("copier"),
   telecharger: document.getElementById("telecharger"),
   effacer: document.getElementById("effacer"),
+  niveaux: document.getElementById("niveaux"),
+  niveauMicro: document.getElementById("niveauMicro"),
+  niveauSysteme: document.getElementById("niveauSysteme"),
+  ligneSysteme: document.getElementById("ligneSysteme"),
 };
 
 let sessionId = null;
@@ -27,6 +32,13 @@ let fluxAOuvrir = [];      // flux a fermer en fin d'enregistrement
 let contexteAudio = null;
 let debutEnregistrement = 0;
 let minuterie = null;
+let animation = null;
+
+// Etat REEL de la capture (jamais deduit de la case a cocher : c'est ce qui
+// masquait l'absence de son systeme dans la version precedente).
+let sonSystemeActif = false;
+const mesures = { micro: null, systeme: null };      // AnalyserNode par source
+const maxima = { micro: 0, systeme: 0 };             // niveau max sur tout l'enregistrement
 
 function etat(message, genre = "") {
   el.etat.className = "etat" + (genre ? " " + genre : "");
@@ -52,38 +64,90 @@ async function api(chemin, options = {}) {
   return reponse.json();
 }
 
+/** Branche un flux sur le melange, avec une mesure de niveau pour l'afficher. */
+function brancher(flux, melange, nom) {
+  const source = contexteAudio.createMediaStreamSource(flux);
+  const mesure = contexteAudio.createAnalyser();
+  mesure.fftSize = 512;
+  source.connect(mesure);
+  source.connect(melange);
+  mesures[nom] = mesure;
+}
+
+/** Niveau sonore instantane d'une source, entre 0 et 1. */
+function niveau(mesure) {
+  if (!mesure) return 0;
+  const donnees = new Float32Array(mesure.fftSize);
+  mesure.getFloatTimeDomainData(donnees);
+  let max = 0;
+  for (const valeur of donnees) max = Math.max(max, Math.abs(valeur));
+  return max;
+}
+
+function rafraichirNiveaux() {
+  for (const nom of ["micro", "systeme"]) {
+    const valeur = niveau(mesures[nom]);
+    maxima[nom] = Math.max(maxima[nom], valeur);
+    const barre = nom === "micro" ? el.niveauMicro : el.niveauSysteme;
+    // Echelle non lineaire : les niveaux de parole normaux restent lisibles.
+    barre.style.width = Math.min(100, Math.sqrt(valeur) * 130) + "%";
+    barre.classList.toggle("actif", valeur > SEUIL_SILENCE);
+  }
+  animation = requestAnimationFrame(rafraichirNiveaux);
+}
+
 /** Micro + (optionnel) son de l'ordinateur, melanges en une seule piste. */
-async function ouvrirMicroEtSysteme(avecSonSysteme) {
+async function ouvrirSources(avecSonSysteme) {
   const micro = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: true, noiseSuppression: true },
   });
   fluxAOuvrir.push(micro);
 
-  if (!avecSonSysteme) return micro;
-
-  let ecran;
-  try {
-    ecran = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-  } catch (e) {
-    etat("Partage refuse : seul le micro sera enregistre.", "erreur");
-    return micro;
-  }
-  fluxAOuvrir.push(ecran);
-
-  if (ecran.getAudioTracks().length === 0) {
-    // L'utilisateur a partage sans cocher "Partager l'audio"
-    ecran.getTracks().forEach((p) => p.stop());
-    etat("Aucun son partage (case « Partager l'audio » non cochee) : "
-         + "seul le micro sera enregistre.", "erreur");
-    return micro;
-  }
-  // La video n'est pas utilisee : on la coupe tout de suite.
-  ecran.getVideoTracks().forEach((p) => p.stop());
-
   contexteAudio = new AudioContext();
+  // Un contexte suspendu ne traite AUCUN son : le melange serait silencieux.
+  if (contexteAudio.state === "suspended") await contexteAudio.resume();
   const melange = contexteAudio.createMediaStreamDestination();
-  contexteAudio.createMediaStreamSource(micro).connect(melange);
-  contexteAudio.createMediaStreamSource(ecran).connect(melange);
+  brancher(micro, melange, "micro");
+
+  if (avecSonSysteme) {
+    let ecran = null;
+    try {
+      ecran = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        // Pas de traitement sur le son de l'ordinateur : il est deja propre,
+        // et le "nettoyer" degraderait les voix des autres participants.
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      });
+    } catch (e) {
+      etat("Partage refuse : seul le micro sera enregistre.", "erreur");
+    }
+
+    if (ecran) {
+      fluxAOuvrir.push(ecran);
+      if (ecran.getAudioTracks().length === 0) {
+        // Partage accepte, mais sans cocher "Partager l'audio"
+        ecran.getTracks().forEach((p) => p.stop());
+        etat("Aucun son partage (case « Partager l'audio » non cochee) : "
+             + "seul le micro sera enregistre.", "erreur");
+      } else {
+        // NE PAS arreter la piste video : dans Chrome, l'arreter met fin a
+        // TOUTE la session de partage, et la piste audio meurt avec elle.
+        // Elle est simplement laissee de cote (jamais enregistree).
+        brancher(ecran, melange, "systeme");
+        sonSystemeActif = true;
+        // Si l'utilisateur arrete le partage via la barre de Chrome.
+        ecran.getAudioTracks()[0].addEventListener("ended", () => {
+          sonSystemeActif = false;
+          mesures.systeme = null;
+          etat("Partage du son interrompu : la suite est enregistree au micro seul.",
+               "erreur");
+        });
+      }
+    }
+  }
+
+  el.ligneSysteme.hidden = !sonSystemeActif;
+  el.niveaux.hidden = false;
   return melange.stream;
 }
 
@@ -91,13 +155,17 @@ function fermerFlux() {
   fluxAOuvrir.forEach((flux) => flux.getTracks().forEach((piste) => piste.stop()));
   fluxAOuvrir = [];
   if (contexteAudio) { contexteAudio.close(); contexteAudio = null; }
+  mesures.micro = mesures.systeme = null;
+  if (animation) { cancelAnimationFrame(animation); animation = null; }
 }
 
 async function demarrer() {
   el.demarrer.disabled = true;
+  sonSystemeActif = false;
+  maxima.micro = maxima.systeme = 0;
   etat("Autorisation du micro...");
   try {
-    const flux = await ouvrirMicroEtSysteme(el.sonSysteme.checked);
+    const flux = await ouvrirSources(el.sonSysteme.checked);
     const session = await api("/api/sessions", { method: "POST" });
     sessionId = session.id;
 
@@ -119,9 +187,11 @@ async function demarrer() {
     debutEnregistrement = Date.now();
     el.arreter.disabled = false;
     el.sonSysteme.disabled = true;
+    rafraichirNiveaux();
     minuterie = setInterval(() => {
       const secondes = (Date.now() - debutEnregistrement) / 1000;
-      const source = el.sonSysteme.checked ? "micro + son de l'ordinateur" : "micro";
+      // Source reellement captee, pas la case cochee.
+      const source = sonSystemeActif ? "micro + son de l'ordinateur" : "micro seul";
       etat(`<span class="point"></span>Enregistrement en cours (${source}) — ${duree(secondes)}`);
     }, 500);
   } catch (e) {
@@ -134,6 +204,8 @@ async function demarrer() {
 async function arreter() {
   el.arreter.disabled = true;
   clearInterval(minuterie);
+  const systemeEtaitActif = sonSystemeActif;
+  const maxSysteme = maxima.systeme;
   etat("Finalisation de l'enregistrement...");
 
   // Recupere le dernier morceau avant de cloturer.
@@ -142,6 +214,16 @@ async function arreter() {
     enregistreur.stop();
   });
   fermerFlux();
+  el.niveaux.hidden = true;
+
+  // Le son systeme etait branche mais n'a jamais rien produit : le dire
+  // franchement plutot que de laisser croire qu'il a ete enregistre.
+  if (systemeEtaitActif && maxSysteme < SEUIL_SILENCE) {
+    alert("Le son de l'ordinateur a bien ete partage, mais aucun son n'en est "
+        + "sorti pendant l'enregistrement.\n\nVerifie que la visio ou la video "
+        + "jouait bien du son sur l'onglet/ecran partage. La transcription ne "
+        + "contiendra que ta voix.");
+  }
 
   try {
     await api(`/api/sessions/${sessionId}/terminer`, { method: "POST" });
