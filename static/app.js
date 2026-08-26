@@ -19,6 +19,7 @@ const el = {
   texte: document.getElementById("texte"),
   copier: document.getElementById("copier"),
   telecharger: document.getElementById("telecharger"),
+  audio: document.getElementById("audio"),
   effacer: document.getElementById("effacer"),
   niveaux: document.getElementById("niveaux"),
   niveauMicro: document.getElementById("niveauMicro"),
@@ -39,6 +40,12 @@ let animation = null;
 let sonSystemeActif = false;
 const mesures = { micro: null, systeme: null };      // AnalyserNode par source
 const maxima = { micro: 0, systeme: 0 };             // niveau max sur tout l'enregistrement
+
+// Les noeuds Web Audio doivent rester references : un noeud dont plus aucune
+// variable ne parle peut etre ramasse par le garbage collector, et le son
+// s'arrete alors sans la moindre erreur. On les garde donc ici.
+let noeuds = [];
+let destination = null;
 
 function etat(message, genre = "") {
   el.etat.className = "etat" + (genre ? " " + genre : "");
@@ -72,6 +79,7 @@ function brancher(flux, melange, nom) {
   source.connect(mesure);
   source.connect(melange);
   mesures[nom] = mesure;
+  noeuds.push(source);   // garde une reference (voir commentaire sur `noeuds`)
 }
 
 /** Niveau sonore instantane d'une source, entre 0 et 1. */
@@ -107,6 +115,7 @@ async function ouvrirSources(avecSonSysteme) {
   // Un contexte suspendu ne traite AUCUN son : le melange serait silencieux.
   if (contexteAudio.state === "suspended") await contexteAudio.resume();
   const melange = contexteAudio.createMediaStreamDestination();
+  destination = melange;   // garde une reference (voir commentaire sur `noeuds`)
   brancher(micro, melange, "micro");
 
   if (avecSonSysteme) {
@@ -155,6 +164,8 @@ function fermerFlux() {
   fluxAOuvrir.forEach((flux) => flux.getTracks().forEach((piste) => piste.stop()));
   fluxAOuvrir = [];
   if (contexteAudio) { contexteAudio.close(); contexteAudio = null; }
+  noeuds = [];
+  destination = null;
   mesures.micro = mesures.systeme = null;
   if (animation) { cancelAnimationFrame(animation); animation = null; }
 }
@@ -163,6 +174,7 @@ async function demarrer() {
   el.demarrer.disabled = true;
   sonSystemeActif = false;
   maxima.micro = maxima.systeme = 0;
+  noeuds = [];
   etat("Autorisation du micro...");
   try {
     const flux = await ouvrirSources(el.sonSysteme.checked);
@@ -258,13 +270,14 @@ function suivre() {
       jauge(100);
       el.texte.value = session.texte;
       etat("Transcription terminee.", "succes");
-      [el.copier, el.telecharger, el.effacer].forEach((b) => (b.disabled = false));
+      [el.copier, el.telecharger, el.audio, el.effacer].forEach((b) => (b.disabled = false));
       el.demarrer.disabled = false;
       el.sonSysteme.disabled = false;
     } else if (session.etat === "echec") {
       clearInterval(tic);
       jauge(0);
       etat("Echec : " + session.erreur, "erreur");
+      el.audio.disabled = false;   // l'audio reste ecoutable pour diagnostiquer
       el.demarrer.disabled = false;
       el.sonSysteme.disabled = false;
     }
@@ -283,13 +296,20 @@ el.telecharger.addEventListener("click", () => {
   window.location = `/api/sessions/${sessionId}/transcription.txt`;
 });
 
+// Ecouter l'enregistrement recu par le serveur : c'est LA verification qui
+// distingue un probleme de capture (le son manque deja dans l'audio) d'un
+// probleme de transcription (le son est present mais pas retranscrit).
+el.audio.addEventListener("click", () => {
+  window.open(`/api/sessions/${sessionId}/audio.webm`, "_blank");
+});
+
 el.effacer.addEventListener("click", async () => {
   if (!confirm("Effacer l'audio et la transcription du serveur ?")) return;
   await api(`/api/sessions/${sessionId}`, { method: "DELETE" });
   sessionId = null;
   el.texte.value = "";
   jauge(0);
-  [el.copier, el.telecharger, el.effacer].forEach((b) => (b.disabled = true));
+  [el.copier, el.telecharger, el.audio, el.effacer].forEach((b) => (b.disabled = true));
   etat("Donnees effacees du serveur.", "succes");
 });
 
