@@ -39,7 +39,6 @@ let animation = null;
 // masquait l'absence de son systeme dans la version precedente).
 let sonSystemeActif = false;
 const mesures = { micro: null, systeme: null };      // AnalyserNode par source
-const maxima = { micro: 0, systeme: 0 };             // niveau max sur tout l'enregistrement
 
 // Les noeuds Web Audio doivent rester references : un noeud dont plus aucune
 // variable ne parle peut etre ramasse par le garbage collector, et le son
@@ -95,7 +94,6 @@ function niveau(mesure) {
 function rafraichirNiveaux() {
   for (const nom of ["micro", "systeme"]) {
     const valeur = niveau(mesures[nom]);
-    maxima[nom] = Math.max(maxima[nom], valeur);
     const barre = nom === "micro" ? el.niveauMicro : el.niveauSysteme;
     // Echelle non lineaire : les niveaux de parole normaux restent lisibles.
     barre.style.width = Math.min(100, Math.sqrt(valeur) * 130) + "%";
@@ -173,7 +171,6 @@ function fermerFlux() {
 async function demarrer() {
   el.demarrer.disabled = true;
   sonSystemeActif = false;
-  maxima.micro = maxima.systeme = 0;
   noeuds = [];
   etat("Autorisation du micro...");
   try {
@@ -216,8 +213,6 @@ async function demarrer() {
 async function arreter() {
   el.arreter.disabled = true;
   clearInterval(minuterie);
-  const systemeEtaitActif = sonSystemeActif;
-  const maxSysteme = maxima.systeme;
   etat("Finalisation de l'enregistrement...");
 
   // Recupere le dernier morceau avant de cloturer.
@@ -227,15 +222,6 @@ async function arreter() {
   });
   fermerFlux();
   el.niveaux.hidden = true;
-
-  // Le son systeme etait branche mais n'a jamais rien produit : le dire
-  // franchement plutot que de laisser croire qu'il a ete enregistre.
-  if (systemeEtaitActif && maxSysteme < SEUIL_SILENCE) {
-    alert("Le son de l'ordinateur a bien ete partage, mais aucun son n'en est "
-        + "sorti pendant l'enregistrement.\n\nVerifie que la visio ou la video "
-        + "jouait bien du son sur l'onglet/ecran partage. La transcription ne "
-        + "contiendra que ta voix.");
-  }
 
   try {
     await api(`/api/sessions/${sessionId}/terminer`, { method: "POST" });
