@@ -35,6 +35,10 @@ DEPOTS = {
     "base": "Systran/faster-whisper-base",
     "small": "Systran/faster-whisper-small",
     "medium": "Systran/faster-whisper-medium",
+    # Turbo : qualite proche de large-v3 pour un decodeur bien plus leger,
+    # c'est le modele par defaut du projet (voir config.py).
+    "large-v3-turbo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+    "turbo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
     "large-v3": "Systran/faster-whisper-large-v3",
 }
 
@@ -145,6 +149,14 @@ def main():
         fichiers = lister_fichiers(repo)
     except Exception as e:
         print(f"Impossible de lister les fichiers du modele : {type(e).__name__}: {e}")
+        return 1
+
+    # Garde-fou : sans model.bin, le dossier serait cree mais inutilisable, et
+    # l'erreur n'apparaitrait qu'au moment de transcrire.
+    if "model.bin" not in fichiers:
+        print(f"Le depot {repo} ne contient pas de model.bin : ce n'est pas un "
+              "modele au format faster-whisper (CTranslate2).")
+        print("Verifie le nom du modele dans config.py (whisper_model).")
         return 1
 
     for fichier in fichiers:

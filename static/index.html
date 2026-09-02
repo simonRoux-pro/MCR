@@ -25,6 +25,17 @@
       </span>
     </label>
 
+    <label class="champ" for="vocabulaire">
+      <strong>Mots a ne pas ecorcher</strong> (facultatif)
+      <small>
+        Noms des participants, du projet, sigles metier... separes par des virgules.
+        Ils sont souffles au modele, qui cesse d'inventer une orthographe.
+        La liste est retenue pour les prochaines reunions.
+      </small>
+      <input type="text" id="vocabulaire"
+             placeholder="Ex : Dupont, Kubernetes, RGPD, Jira">
+    </label>
+
     <div class="boutons">
       <button id="demarrer" class="principal">Demarrer l'enregistrement</button>
       <button id="arreter" disabled>Arreter et transcrire</button>

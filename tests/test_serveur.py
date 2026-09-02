@@ -17,7 +17,7 @@ def client():
 
 def _transcription_simulee(texte="texte transcrit"):
     """Remplace transcribe() : ecrit le fichier attendu et renvoie le texte."""
-    def faux_transcribe(audio, sortie, progress=None):
+    def faux_transcribe(audio, sortie, progress=None, vocabulaire=""):
         if progress:
             progress(5.0, 10.0)
         with open(sortie, "w", encoding="utf-8") as f:
@@ -83,6 +83,21 @@ def test_echec_de_transcription_remonte_le_message(client):
     etat = client.get(f"/api/sessions/{identifiant}").json()
     assert etat["etat"] == "echec"
     assert etat["erreur"] == "modele absent"
+
+
+def test_le_vocabulaire_suit_la_session_jusqu_a_la_transcription(client):
+    """Les mots saisis dans la page (noms, sigles) doivent arriver jusqu'au
+    modele : c'est ce qui evite les orthographes fantaisistes."""
+    identifiant = client.post("/api/sessions",
+                              json={"vocabulaire": "Dupont, RGPD"}).json()["id"]
+    client.post(f"/api/sessions/{identifiant}/morceau", content=b"audio")
+
+    with _transcription_simulee() as faux:
+        client.post(f"/api/sessions/{identifiant}/terminer")
+        serveur.executeur.shutdown(wait=True)
+        serveur.executeur = type(serveur.executeur)(max_workers=1)
+
+    assert faux.call_args.kwargs["vocabulaire"] == "Dupont, RGPD"
 
 
 def test_session_inconnue(client):
