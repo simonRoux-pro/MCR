@@ -50,6 +50,20 @@ h2 { font-size: 1.1rem; margin: 0; }
 .case input { margin-top: .3rem; width: 1.05rem; height: 1.05rem; flex: none; cursor: pointer; }
 .case small { display: block; color: var(--discret); font-size: .85rem; margin-top: .15rem; }
 
+/* Vocabulaire de la reunion */
+.champ { display: block; margin-top: 1.1rem; cursor: text; }
+.champ small { display: block; color: var(--discret); font-size: .85rem; margin: .15rem 0 .4rem; }
+.champ input {
+  width: 100%;
+  font: inherit;
+  padding: .55rem .7rem;
+  border-radius: .5rem;
+  border: 1px solid var(--bord);
+  background: var(--fond);
+  color: var(--texte);
+}
+.champ input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
 .boutons { display: flex; gap: .75rem; flex-wrap: wrap; margin: 1.25rem 0 1rem; }
 
 button {

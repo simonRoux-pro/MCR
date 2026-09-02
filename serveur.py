@@ -47,6 +47,7 @@ class Session:
     texte: str = ""
     erreur: str = ""
     octets_recus: int = 0
+    vocabulaire: str = ""             # noms propres / sigles de cette reunion
     verrou: threading.Lock = field(default_factory=threading.Lock)
 
     @property
@@ -79,11 +80,21 @@ def _session(identifiant: str) -> Session:
 
 
 @app.post("/api/sessions")
-def creer_session():
-    """Ouvre une session d'enregistrement et renvoie son identifiant."""
+async def creer_session(requete: Request):
+    """Ouvre une session d'enregistrement et renvoie son identifiant.
+
+    Corps facultatif : {"vocabulaire": "noms propres, sigles..."} — ces mots
+    sont souffles au modele et evitent les orthographes fantaisistes."""
+    try:
+        donnees = await requete.json()
+    except Exception:
+        donnees = {}                   # aucun corps envoye : valeurs par defaut
+    vocabulaire = str((donnees or {}).get("vocabulaire", "") or "")[:1000]
+
     identifiant = uuid.uuid4().hex
     dossier = Path(tempfile.mkdtemp(prefix=f"reunion-{identifiant[:8]}-"))
-    session = Session(identifiant=identifiant, dossier=dossier)
+    session = Session(identifiant=identifiant, dossier=dossier,
+                      vocabulaire=vocabulaire)
     with verrou_sessions:
         sessions[identifiant] = session
     print(f"[MeetingCT] Session {identifiant[:8]} ouverte ({dossier})", flush=True)
@@ -117,7 +128,8 @@ def _transcrire(session: Session):
 
         texte = transcribe(str(session.audio),
                            str(session.dossier / "transcription.txt"),
-                           progress=progression)
+                           progress=progression,
+                           vocabulaire=session.vocabulaire)
         session.texte = texte
         session.progression = 100
         session.etat = "termine"

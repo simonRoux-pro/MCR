@@ -9,7 +9,7 @@ source .venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 
-echo "== 2. Telechargement du modele Whisper (quelques centaines de Mo, une seule fois) =="
+echo "== 2. Telechargement du modele Whisper (environ 1,6 Go, une seule fois) =="
 python telecharge_modele.py
 
 echo ""

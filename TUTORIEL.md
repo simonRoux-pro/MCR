@@ -69,8 +69,9 @@ Ce script :
 - cree un environnement Python isole (`.venv`), pour ne rien installer sur
   le systeme global ;
 - installe les librairies necessaires (faster-whisper, FastAPI...) ;
-- pre-telecharge le modele de transcription (quelques centaines de Mo, une
-  seule fois) — relançable seul via `python telecharge_modele.py`.
+- pre-telecharge le modele de transcription (environ 1,6 Go, une seule fois)
+  — relançable seul via `python telecharge_modele.py`. En cas de coupure, il
+  reprend exactement ou il s'etait arrete : rien n'est perdu.
 
 Le script s'arrete et affiche une erreur claire des qu'une etape echoue plutot
 que de continuer silencieusement. Si tu ne vois pas le message final
@@ -98,16 +99,19 @@ ensuite **http://127.0.0.1:8000** dans **Chrome ou Edge**.
 
 1. Laisse coche **"Capter aussi le son de l'ordinateur"** si tu veux
    enregistrer les autres participants d'une visio.
-2. Clique sur **"Demarrer l'enregistrement"** et **autorise le micro**.
-3. Le navigateur demande quoi partager : choisis **l'onglet de la visio** (ou
+2. Dans **"Mots a ne pas ecorcher"**, tape les noms des participants, du
+   projet, les sigles du metier (separes par des virgules). Facultatif, mais
+   c'est ce qui evite les orthographes fantaisistes sur ces mots-la. Le
+   navigateur s'en souvient pour les prochaines fois.
+3. Clique sur **"Demarrer l'enregistrement"** et **autorise le micro**.
+4. Le navigateur demande quoi partager : choisis **l'onglet de la visio** (ou
    l'ecran entier) et surtout **coche « Partager l'audio »** en bas de la
    fenetre de selection. Sans cette case, seul ton micro sera enregistre.
-   (La video n'est pas enregistree : elle est coupee immediatement, seul le son
-   est conserve.)
-4. Parle, laisse la reunion se derouler.
-5. Clique sur **"Arreter et transcrire"** : la transcription demarre, la barre
+   (La video n'est jamais enregistree : seul le son est conserve.)
+5. Parle, laisse la reunion se derouler.
+6. Clique sur **"Arreter et transcrire"** : la transcription demarre, la barre
    de progression avance, puis le texte s'affiche.
-6. **Copier** ou **Telecharger (.txt)** pour reprendre le texte ailleurs, et
+7. **Copier** ou **Telecharger (.txt)** pour reprendre le texte ailleurs, et
    **Effacer du serveur** quand tu n'en as plus besoin.
 
 ---
@@ -121,5 +125,6 @@ ensuite **http://127.0.0.1:8000** dans **Chrome ou Edge**.
 | Le script echoue pendant `pip install` (compilateur manquant) | `git pull` dans le dossier du projet, puis relance le script |
 | Le telechargement du modele est tres lent ou s'interrompt | Normal sur une connexion instable : relance `python telecharge_modele.py`, il reprend ou il s'est arrete |
 | La page ne s'ouvre pas | Verifie que le terminal du serveur est toujours ouvert et affiche bien `http://127.0.0.1:8000` |
+| Le texte est approximatif | Ecoute d'abord l'audio recu (bouton **"Ecouter l'audio"**) : si une voix y est faible ou lointaine, c'est la prise de son qu'il faut corriger. Sinon, voir la section "Ameliorer la qualite de la transcription" du [README](README.md) |
 | Seul mon micro est enregistre | La case « Partager l'audio » n'a pas ete cochee au moment du partage, ou le navigateur n'est pas Chrome/Edge |
 | Autres erreurs | Voir la section **Depannage** du [README principal](README.md#10-depannage) |

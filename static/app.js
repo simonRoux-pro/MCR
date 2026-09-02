@@ -10,10 +10,21 @@ const DUREE_MORCEAU = 5000;   // envoi d'un morceau toutes les 5 s
 const INTERVALLE_SUIVI = 1000;
 const SEUIL_SILENCE = 0.01;   // en dessous : considere comme du silence
 
+// Debit de l'audio compresse. Le reglage par defaut des navigateurs vise la
+// visio (voix compressee au maximum) ; ici l'enregistrement reste sur la
+// machine, autant garder un son propre : le modele transcrit d'autant mieux.
+const DEBIT_AUDIO = 128000;   // 128 kbit/s
+
+// Chaque source est un peu attenuee avant le melange : additionner deux sons
+// forts sature l'enregistrement, et une voix saturee devient illisible pour le
+// modele.
+const GAIN_SOURCE = 0.75;
+
 const el = {
   demarrer: document.getElementById("demarrer"),
   arreter: document.getElementById("arreter"),
   sonSysteme: document.getElementById("sonSysteme"),
+  vocabulaire: document.getElementById("vocabulaire"),
   etat: document.getElementById("etat"),
   jauge: document.getElementById("jauge"),
   texte: document.getElementById("texte"),
@@ -75,10 +86,15 @@ function brancher(flux, melange, nom) {
   const source = contexteAudio.createMediaStreamSource(flux);
   const mesure = contexteAudio.createAnalyser();
   mesure.fftSize = 512;
-  source.connect(mesure);
-  source.connect(melange);
+  const gain = contexteAudio.createGain();
+  gain.gain.value = GAIN_SOURCE;
+
+  source.connect(mesure);        // la mesure affiche le niveau reel de la source
+  source.connect(gain);
+  gain.connect(melange);
+
   mesures[nom] = mesure;
-  noeuds.push(source);   // garde une reference (voir commentaire sur `noeuds`)
+  noeuds.push(source, gain);   // garde une reference (voir commentaire sur `noeuds`)
 }
 
 /** Niveau sonore instantane d'une source, entre 0 et 1. */
@@ -105,7 +121,18 @@ function rafraichirNiveaux() {
 /** Micro + (optionnel) son de l'ordinateur, melanges en une seule piste. */
 async function ouvrirSources(avecSonSysteme) {
   const micro = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: true, noiseSuppression: true },
+    audio: {
+      // L'annulation d'echo reste indispensable : sans elle, quelqu'un qui
+      // ecoute la reunion sur haut-parleurs voit le son de l'ordinateur revenir
+      // une seconde fois par le micro, en decale — deux voix superposees, que
+      // le modele ne sait pas demeler.
+      echoCancellation: true,
+      noiseSuppression: true,
+      // Remonte automatiquement les voix trop faibles (micro loin, personne qui
+      // parle bas) : c'est la premiere cause de mots avales a la transcription.
+      autoGainControl: true,
+      channelCount: 1,
+    },
   });
   fluxAOuvrir.push(micro);
 
@@ -175,10 +202,17 @@ async function demarrer() {
   etat("Autorisation du micro...");
   try {
     const flux = await ouvrirSources(el.sonSysteme.checked);
-    const session = await api("/api/sessions", { method: "POST" });
+    const session = await api("/api/sessions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ vocabulaire: el.vocabulaire.value }),
+    });
     sessionId = session.id;
 
-    enregistreur = new MediaRecorder(flux, { mimeType: "audio/webm" });
+    enregistreur = new MediaRecorder(flux, {
+      mimeType: "audio/webm",
+      audioBitsPerSecond: DEBIT_AUDIO,
+    });
     enregistreur.ondataavailable = async (evenement) => {
       if (evenement.data.size === 0 || !sessionId) return;
       try {
@@ -196,6 +230,7 @@ async function demarrer() {
     debutEnregistrement = Date.now();
     el.arreter.disabled = false;
     el.sonSysteme.disabled = true;
+    el.vocabulaire.disabled = true;
     rafraichirNiveaux();
     minuterie = setInterval(() => {
       const secondes = (Date.now() - debutEnregistrement) / 1000;
@@ -230,6 +265,7 @@ async function arreter() {
     etat("Erreur : " + e.message, "erreur");
     el.demarrer.disabled = false;
     el.sonSysteme.disabled = false;
+    el.vocabulaire.disabled = false;
   }
 }
 
@@ -259,6 +295,7 @@ function suivre() {
       [el.copier, el.telecharger, el.audio, el.effacer].forEach((b) => (b.disabled = false));
       el.demarrer.disabled = false;
       el.sonSysteme.disabled = false;
+      el.vocabulaire.disabled = false;
     } else if (session.etat === "echec") {
       clearInterval(tic);
       jauge(0);
@@ -266,6 +303,7 @@ function suivre() {
       el.audio.disabled = false;   // l'audio reste ecoutable pour diagnostiquer
       el.demarrer.disabled = false;
       el.sonSysteme.disabled = false;
+      el.vocabulaire.disabled = false;
     }
   }, INTERVALLE_SUIVI);
 }
@@ -297,6 +335,17 @@ el.effacer.addEventListener("click", async () => {
   jauge(0);
   [el.copier, el.telecharger, el.audio, el.effacer].forEach((b) => (b.disabled = true));
   etat("Donnees effacees du serveur.", "succes");
+});
+
+// Le vocabulaire est retenu d'une reunion a l'autre, dans le navigateur
+// uniquement (localStorage) : ce sont souvent les memes noms chaque semaine.
+const CLE_VOCABULAIRE = "meeting-ct.vocabulaire";
+try {
+  el.vocabulaire.value = localStorage.getItem(CLE_VOCABULAIRE) || "";
+} catch (e) { /* stockage refuse (navigation privee) : sans importance */ }
+el.vocabulaire.addEventListener("change", () => {
+  try { localStorage.setItem(CLE_VOCABULAIRE, el.vocabulaire.value); }
+  catch (e) { /* idem */ }
 });
 
 // Avertit si le navigateur ne sait pas capter le son de l'ordinateur.
