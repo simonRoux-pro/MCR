@@ -6,6 +6,18 @@
 // partage un onglet/ecran en cochant "Partager l'audio". Les deux sources sont
 // ensuite melangees puis enregistrees.
 
+// L'application n'est pas toujours servie a la racine d'un domaine : derriere
+// un portail (Coder, reverse proxy...), elle vit sous un prefixe de chemin.
+// Des URL absolues comme "/api/sessions" viseraient alors la racine du portail
+// et non l'application. On deduit donc la racine de l'adresse de ce script
+// lui-meme : c'est la seule information exacte quel que soit le prefixe.
+const RACINE = document.currentScript.src.replace(/static\/app\.js(\?.*)?$/, "");
+
+/** Adresse complete d'une ressource de l'application. */
+function lien(chemin) {
+  return RACINE + chemin.replace(/^\//, "");
+}
+
 const DUREE_MORCEAU = 5000;   // envoi d'un morceau toutes les 5 s
 const INTERVALLE_SUIVI = 1000;
 const SEUIL_SILENCE = 0.01;   // en dessous : considere comme du silence
@@ -83,7 +95,7 @@ function duree(secondes) {
 }
 
 async function api(chemin, options = {}) {
-  const reponse = await fetch(chemin, options);
+  const reponse = await fetch(lien(chemin), options);
   if (!reponse.ok) {
     let detail = `Erreur ${reponse.status}`;
     try { detail = (await reponse.json()).erreur || detail; } catch (e) { /* reponse non JSON */ }
@@ -227,7 +239,7 @@ async function demarrer() {
     enregistreur.ondataavailable = async (evenement) => {
       if (evenement.data.size === 0 || !sessionId) return;
       try {
-        await fetch(`/api/sessions/${sessionId}/morceau`, {
+        await fetch(lien(`/api/sessions/${sessionId}/morceau`), {
           method: "POST",
           headers: { "Content-Type": "application/octet-stream" },
           body: evenement.data,
@@ -330,14 +342,14 @@ el.copier.addEventListener("click", async () => {
 });
 
 el.telecharger.addEventListener("click", () => {
-  window.location = `/api/sessions/${sessionId}/transcription.txt`;
+  window.location = lien(`/api/sessions/${sessionId}/transcription.txt`);
 });
 
 // Ecouter l'enregistrement recu par le serveur : c'est LA verification qui
 // distingue un probleme de capture (le son manque deja dans l'audio) d'un
 // probleme de transcription (le son est present mais pas retranscrit).
 el.audio.addEventListener("click", () => {
-  window.open(`/api/sessions/${sessionId}/audio.webm`, "_blank");
+  window.open(lien(`/api/sessions/${sessionId}/audio.webm`), "_blank");
 });
 
 el.effacer.addEventListener("click", async () => {

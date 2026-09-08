@@ -143,6 +143,21 @@ def test_la_page_est_servie(client):
     assert client.get("/static/app.js").status_code == 200
 
 
+def test_la_page_utilise_des_chemins_relatifs(client):
+    """Derriere un portail (Coder, reverse proxy), l'application vit sous un
+    prefixe de chemin : une URL absolue viserait la racine du portail et la
+    page arriverait sans style ni script."""
+    page = client.get("/").text
+    assert 'href="static/style.css"' in page
+    assert 'src="static/app.js"' in page
+    assert '"/static/' not in page
+
+    script = client.get("/static/app.js").text
+    assert "document.currentScript.src" in script   # racine deduite du script
+    assert 'fetch("/api/' not in script
+    assert "fetch(`/api/" not in script
+
+
 def test_telechargement_de_l_audio_recu(client):
     """L'audio brut doit etre recuperable : c'est ce qui permet de verifier
     par l'ecoute si le son de l'ordinateur a bien ete enregistre."""
