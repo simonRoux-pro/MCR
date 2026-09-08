@@ -43,7 +43,10 @@ class Session:
     identifiant: str
     dossier: Path
     etat: str = "enregistrement"      # enregistrement | attente | transcription | termine | echec
-    progression: int = 0              # pourcentage de la transcription
+    # Pourcentage de la transcription, ou -1 tant qu'il est inconnu. GenIAL
+    # rend le texte d'un bloc, sans avancement : mieux vaut une attente
+    # explicite qu'un 0 % immobile, qui donne l'impression que rien ne tourne.
+    progression: int = -1
     texte: str = ""
     erreur: str = ""
     octets_recus: int = 0
@@ -197,6 +200,17 @@ def telecharger(identifiant: str):
     return FileResponse(session.dossier / "transcription.txt",
                         media_type="text/plain; charset=utf-8",
                         filename="transcription.txt")
+
+
+@app.get("/api/info")
+def info():
+    """Renseigne la page sur le moteur utilise : elle n'affiche pas les memes
+    choses selon que l'audio reste sur le serveur ou part chez GenIAL."""
+    return {
+        "moteur": CONFIG.moteur,
+        # Le vocabulaire personnalise n'existe que sur le moteur local.
+        "vocabulaireDisponible": CONFIG.moteur == "local",
+    }
 
 
 @app.get("/")

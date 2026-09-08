@@ -1,0 +1,15 @@
+# Installation allegee, pour le moteur "genial" uniquement (voir config.py).
+#
+# La transcription est faite par l'API interne GenIAL : ni modele a telecharger
+# (~1,6 Go), ni bibliotheque de calcul a compiler sur la machine. Utile la ou
+# huggingface.co est inaccessible ou le poste trop contraint.
+#
+#   pip install -r requirements-genial.txt
+#
+# Pour le moteur "local", c'est requirements.txt qu'il faut installer.
+
+requests==2.34.2
+
+# Serveur web
+fastapi>=0.115
+uvicorn>=0.30

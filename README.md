@@ -4,8 +4,11 @@ Transcription de reunion **dans le navigateur**, transcrite **en local**.
 
 Les utilisateurs ouvrent une page web, enregistrent leur reunion (micro **et**
 son de l'ordinateur, donc les autres participants d'une visio), et recuperent
-le texte. La transcription tourne sur le serveur avec faster-whisper : aucun
-service externe n'est appele, aucune donnee n'est envoyee sur internet.
+le texte.
+
+Deux moteurs de transcription au choix (voir la section Configuration) :
+**Whisper en local** sur le serveur — rien ne sort de la machine — ou l'API
+interne **GenIAL**, quand le modele ne peut pas etre installe.
 
 Pas de compte-rendu automatique : l'outil produit **le texte**, que tu reprends
 ensuite dans l'outil de ton choix.
@@ -15,8 +18,8 @@ ensuite dans l'outil de ton choix.
 1. Le navigateur capte le micro et, si demande, le son de l'ordinateur
 2. L'audio est envoye au serveur **au fil de l'eau** (rien ne s'accumule en
    memoire : une reunion de 2 h passe sans probleme)
-3. Le serveur transcrit avec faster-whisper (CPU, en local), modele
-   `large-v3-turbo` par defaut
+3. Le serveur transcrit — avec faster-whisper en local (modele
+   `large-v3-turbo` par defaut), ou via GenIAL
 4. Le texte s'affiche : a copier, telecharger en `.txt`, ou effacer du serveur
 
 ---
@@ -138,6 +141,47 @@ Les autres postes ouvrent alors `http://<ip-du-serveur>:8000`.
 
 ## 6. Configuration
 
+### Choisir le moteur de transcription
+
+`CONFIG.moteur` dans `config.py` :
+
+| | `"local"` (defaut) | `"genial"` |
+|---|---|---|
+| Qui transcrit | faster-whisper, sur le serveur | l'API interne GenIAL |
+| Installation | modele a telecharger (~1,6 Go) | rien a installer |
+| Charge machine | forte (CPU) | nulle |
+| L'audio quitte la machine | non | **oui**, vers GenIAL |
+| Dependances | `requirements.txt` | `requirements-genial.txt` (allege) |
+| Vocabulaire personnalise | oui | non (l'API ne le propose pas) |
+
+**Mettre en place GenIAL**, la ou huggingface.co est inaccessible ou la machine
+trop contrainte :
+
+```bash
+pip install -r requirements-genial.txt
+export GENIAL_TOKEN="<ton jeton>"      # Windows : set GENIAL_TOKEN=<ton jeton>
+python diag_genial.py                  # verifie jeton, certificat et format
+```
+
+`diag_genial.py` envoie une seconde de silence generee sur place et affiche la
+reponse brute du service : c'est ce qui distingue un jeton refuse d'un
+certificat non verifiable ou d'un format audio rejete. Une fois qu'il affiche
+`SUCCES`, passe `moteur = "genial"` dans `config.py` et lance le serveur.
+
+Le jeton n'est **jamais** ecrit dans `config.py` (qui est versionne) : il est
+lu dans la variable d'environnement `GENIAL_TOKEN`.
+
+| Reglage GenIAL | Role | Defaut |
+|---|---|---|
+| `genial_url` | Point d'entree de l'API | l'URL interne |
+| `genial_langue` | Code langue attendu par le service (3 lettres) | `fra` |
+| `genial_entete_token` / `genial_prefixe_token` | Forme de l'en-tete d'authentification, a ajuster si le service attend autre chose (`X-API-Key` et prefixe vide, par exemple) | `Authorization` / `Bearer ` |
+| `genial_ca` | Chemin du bundle de l'autorite interne, si le certificat n'est pas reconnu | vide |
+| `genial_verifier_tls` | Verification du certificat. `False` = depannage uniquement : la liaison reste chiffree, mais plus rien ne garantit l'identite du serveur | `True` |
+| `genial_timeout` | Attente maximale de la reponse, en secondes | `1800` |
+
+### Reglages generaux
+
 Tout se regle dans `config.py` :
 
 | Parametre | Role | Valeur par defaut |
@@ -211,8 +255,14 @@ mis en file d'attente (la page l'indique) plutot que de saturer le processeur.
 
 ## 9. Confidentialite
 
-- La transcription tourne **en local**, sur la machine qui heberge le serveur.
-  Aucun service externe, aucune cle d'API, aucun envoi sur internet.
+- **Avec `moteur = "local"`** (defaut) : la transcription tourne sur la machine
+  qui heberge le serveur. Aucun service externe, aucune cle d'API, aucun envoi
+  sur internet.
+- **Avec `moteur = "genial"`** : l'enregistrement complet de la reunion est
+  envoye a GenIAL, qui le transcrit. Il ne sort pas du reseau interne, mais il
+  quitte la machine — la page le dit explicitement dans son sous-titre pour que
+  l'utilisateur le sache avant d'enregistrer. A arbitrer selon la sensibilite
+  des reunions concernees.
 - L'audio et le texte sont stockes dans un dossier temporaire du serveur, et
   supprimes par le bouton **"Effacer du serveur"**.
 - Les fichiers audio, transcriptions et modeles sont exclus de git (voir
@@ -232,4 +282,7 @@ mis en file d'attente (la page l'indique) plutot que de saturer le processeur.
 | Le micro n'est pas propose sur un autre poste | Les navigateurs exigent HTTPS hors `localhost` | Voir la section "Ouvrir l'acces aux autres postes" |
 | Transcription approximative, mots inventes | Voix trop faible a la prise de son, ou modele trop leger | Ecouter l'audio recu (bouton **"Ecouter l'audio"**) pour situer le probleme, puis voir "Ameliorer la qualite de la transcription" |
 | "Aucun son n'a ete recu" a l'arret | Micro refuse ou muet | Verifier l'autorisation du micro dans le navigateur et le peripherique d'entree du systeme |
+| GenIAL : "le jeton est absent" | Variable d'environnement non definie | `export GENIAL_TOKEN="<jeton>"` dans le terminal qui lance le serveur (elle ne survit pas a une fermeture de terminal) |
+| GenIAL : erreur de certificat | Autorite interne inconnue de Python | Renseigner `genial_ca` dans `config.py` avec le bundle de l'autorite ; `genial_verifier_tls = False` en depannage seulement |
+| GenIAL : HTTP 415 ou message sur le format | Le service n'accepte pas le webm produit par le navigateur | Lancer `python diag_genial.py` : il teste avec un WAV. Si le WAV passe et pas le webm, il faut convertir avant l'envoi — me le signaler |
 | Installation qui echoue sur un paquet (`metadata-generation-failed`, "Microsoft Visual C++ required") | Version de Python tres recente : pas de wheel precompile pour ce paquet | `git pull` pour recuperer un `requirements.txt` a jour, puis relancer l'installation |

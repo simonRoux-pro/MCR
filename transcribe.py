@@ -1,5 +1,9 @@
+"""Transcription d'un enregistrement, par l'un des deux moteurs disponibles
+(voir CONFIG.moteur) : Whisper en local, ou l'API interne GenIAL.
+
+Le serveur appelle transcribe() sans savoir lequel tourne."""
 import os
-from faster_whisper import WhisperModel, download_model
+
 from config import CONFIG, chemin_modele_whisper
 
 _model = None
@@ -15,6 +19,8 @@ def _trouver_modele() -> str:
     un telechargement en pleine reunion peut bloquer toute la chaine sur un
     reseau instable. Le modele doit avoir ete recupere au prealable par
     telecharge_modele.py (fait automatiquement par setup.sh / setup.bat)."""
+    from faster_whisper import download_model
+
     local = chemin_modele_whisper()
     if os.path.isfile(os.path.join(local, "model.bin")):
         return local
@@ -30,6 +36,10 @@ def _trouver_modele() -> str:
 
 
 def _get_model():
+    # Importe ici et pas en tete de fichier : avec le moteur "genial",
+    # faster-whisper n'a pas besoin d'etre installe.
+    from faster_whisper import WhisperModel
+
     global _model
     if _model is None:
         source = _trouver_modele()
@@ -46,7 +56,20 @@ def _get_model():
 
 def transcribe(audio_path: str, out_path: str, progress=None,
                vocabulaire: str = "") -> str:
-    """Transcrit et ecrit le texte dans un fichier au fil de l'eau.
+    """Transcrit l'enregistrement avec le moteur choisi dans config.py."""
+    if CONFIG.moteur == "genial":
+        from genial import transcrire_genial
+        return transcrire_genial(audio_path, out_path, progress, vocabulaire)
+    if CONFIG.moteur != "local":
+        raise RuntimeError(
+            f"Moteur de transcription inconnu : '{CONFIG.moteur}'. "
+            "Valeurs attendues dans config.py : \"local\" ou \"genial\".")
+    return _transcrire_localement(audio_path, out_path, progress, vocabulaire)
+
+
+def _transcrire_localement(audio_path: str, out_path: str, progress=None,
+                           vocabulaire: str = "") -> str:
+    """Transcrit avec Whisper, sur cette machine, et ecrit au fil de l'eau.
     Si le traitement plante, la partie deja transcrite est conservee.
 
     progress(secondes_traitees, duree_totale) est appele apres chaque segment.

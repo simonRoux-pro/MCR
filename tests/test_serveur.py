@@ -128,6 +128,14 @@ def test_effacement_supprime_les_donnees_du_serveur(client):
     assert client.get(f"/api/sessions/{identifiant}").status_code == 404
 
 
+def test_la_page_connait_le_moteur_utilise(client):
+    """La page adapte son texte selon le moteur : elle ne peut pas promettre
+    que rien ne sort de la machine quand l'audio part chez GenIAL."""
+    infos = client.get("/api/info").json()
+    assert infos["moteur"] == serveur.CONFIG.moteur
+    assert infos["vocabulaireDisponible"] is (serveur.CONFIG.moteur == "local")
+
+
 def test_la_page_est_servie(client):
     page = client.get("/")
     assert page.status_code == 200

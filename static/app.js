@@ -25,6 +25,8 @@ const el = {
   arreter: document.getElementById("arreter"),
   sonSysteme: document.getElementById("sonSysteme"),
   vocabulaire: document.getElementById("vocabulaire"),
+  champVocabulaire: document.getElementById("champVocabulaire"),
+  sousTitre: document.getElementById("sousTitre"),
   etat: document.getElementById("etat"),
   jauge: document.getElementById("jauge"),
   texte: document.getElementById("texte"),
@@ -37,6 +39,10 @@ const el = {
   niveauSysteme: document.getElementById("niveauSysteme"),
   ligneSysteme: document.getElementById("ligneSysteme"),
 };
+
+// Moteur annonce par le serveur (local | genial) : la page n'affiche pas les
+// memes choses selon que l'audio reste sur place ou part chez GenIAL.
+let moteur = "local";
 
 let sessionId = null;
 let enregistreur = null;
@@ -63,7 +69,12 @@ function etat(message, genre = "") {
 }
 
 function jauge(pourcent) {
-  el.jauge.style.width = Math.max(0, Math.min(100, pourcent)) + "%";
+  // Avancement inconnu (-1) : barre animee plutot qu'un 0 % fige, qui laisse
+  // croire que rien ne se passe.
+  const inconnu = pourcent < 0;
+  el.jauge.classList.toggle("indetermine", inconnu);
+  el.jauge.style.width = inconnu ? "100%"
+    : Math.max(0, Math.min(100, pourcent)) + "%";
 }
 
 function duree(secondes) {
@@ -285,7 +296,9 @@ function suivre() {
     if (session.etat === "attente") {
       etat("En file d'attente (une autre transcription est en cours)...");
     } else if (session.etat === "transcription") {
-      etat(`Transcription en cours... ${session.progression} %`);
+      etat(session.progression < 0
+        ? "Transcription en cours (GenIAL)... cela peut prendre plusieurs minutes."
+        : `Transcription en cours... ${session.progression} %`);
       jauge(session.progression);
     } else if (session.etat === "termine") {
       clearInterval(tic);
@@ -347,6 +360,20 @@ el.vocabulaire.addEventListener("change", () => {
   try { localStorage.setItem(CLE_VOCABULAIRE, el.vocabulaire.value); }
   catch (e) { /* idem */ }
 });
+
+// Le serveur dit quel moteur il utilise : la page adapte son sous-titre et
+// masque le vocabulaire, qui n'existe que sur le moteur local.
+(async () => {
+  try {
+    const infos = await api("/api/info");
+    moteur = infos.moteur;
+    if (!infos.vocabulaireDisponible) el.champVocabulaire.hidden = true;
+    if (moteur === "genial") {
+      el.sousTitre.textContent = "L'audio est transcrit par GenIAL, le service "
+        + "interne. L'enregistrement lui est envoye ; il ne sort pas du reseau.";
+    }
+  } catch (e) { /* le serveur repondra de toute facon a la premiere action */ }
+})();
 
 // Avertit si le navigateur ne sait pas capter le son de l'ordinateur.
 if (!navigator.mediaDevices?.getDisplayMedia) {

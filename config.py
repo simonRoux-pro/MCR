@@ -5,7 +5,17 @@ from dataclasses import dataclass
 @dataclass
 class Config:
     # ------------------------------------------------------------------ #
-    # Transcription
+    # Moteur de transcription
+    # ------------------------------------------------------------------ #
+    # "local"  : Whisper sur cette machine. Rien ne sort du serveur, mais il
+    #            faut avoir telecharge le modele au prealable (~1,6 Go).
+    # "genial" : l'API interne GenIAL. Aucun modele a installer et aucun calcul
+    #            sur cette machine, mais l'audio de la reunion est envoye a ce
+    #            service. A choisir la ou le modele ne peut pas etre installe.
+    moteur: str = "local"
+
+    # ------------------------------------------------------------------ #
+    # Transcription locale (moteur "local")
     # ------------------------------------------------------------------ #
     # Modele Whisper, du plus rapide au plus precis :
     #   small          : rapide, mais confond les mots des que le son est moyen
@@ -38,6 +48,37 @@ class Config:
 
     # Coeurs CPU utilises pour la transcription. 0 = tous ceux de la machine.
     cpu_threads: int = 0
+
+    # ------------------------------------------------------------------ #
+    # GenIAL (moteur "genial")
+    # ------------------------------------------------------------------ #
+    genial_url: str = ("https://api-genial.artemis-ia-dr.intradef.gouv.fr"
+                       "/v1/audio/transcriptions")
+
+    # Code langue attendu par GenIAL (3 lettres), a ne pas confondre avec
+    # `language` ci-dessus qui sert au moteur local.
+    genial_langue: str = "fra"
+
+    # Le jeton n'est PAS ecrit ici : ce fichier est versionne. Il est lu dans
+    # cette variable d'environnement, a definir avant de lancer le serveur.
+    genial_variable_token: str = "GENIAL_TOKEN"
+
+    # Forme de l'en-tete d'authentification. A ajuster si GenIAL attend autre
+    # chose (par exemple entete "X-API-Key" et prefixe vide).
+    genial_entete_token: str = "Authorization"
+    genial_prefixe_token: str = "Bearer "
+
+    # Verification du certificat TLS. Renseigner genial_ca avec le chemin du
+    # bundle de l'autorite interne est la bonne solution ; passer
+    # genial_verifier_tls a False desactive la verification (liaison toujours
+    # chiffree, mais plus d'assurance sur l'identite du serveur) et ne devrait
+    # servir qu'en depannage.
+    genial_ca: str = ""
+    genial_verifier_tls: bool = True
+
+    # Temps d'attente maximum de la reponse. Une reunion longue prend du temps
+    # a transcrire cote service : 30 minutes par defaut.
+    genial_timeout: int = 1800
 
     # ------------------------------------------------------------------ #
     # Serveur web

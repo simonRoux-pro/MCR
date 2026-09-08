@@ -52,6 +52,10 @@ h2 { font-size: 1.1rem; margin: 0; }
 
 /* Vocabulaire de la reunion */
 .champ { display: block; margin-top: 1.1rem; cursor: text; }
+/* `display: block` ci-dessus l'emporterait sur la regle du navigateur pour
+   [hidden] : sans cette ligne, masquer le champ depuis le script ne ferait
+   rien du tout. */
+.champ[hidden] { display: none; }
 .champ small { display: block; color: var(--discret); font-size: .85rem; margin: .15rem 0 .4rem; }
 .champ input {
   width: 100%;
@@ -105,6 +109,15 @@ button.discret:hover:not(:disabled) { border-color: var(--rouge); color: var(--r
   border-radius: 1rem;
   transition: width .3s ease;
 }
+
+/* Avancement inconnu : barre qui defile, pour montrer que ca travaille */
+.jauge-remplissage.indetermine {
+  background: linear-gradient(90deg, var(--bord) 25%, var(--accent) 50%, var(--bord) 75%);
+  background-size: 250% 100%;
+  animation: defile 1.4s linear infinite;
+  transition: none;
+}
+@keyframes defile { from { background-position: 100% 0; } to { background-position: -150% 0; } }
 
 .entete-resultat {
   display: flex;

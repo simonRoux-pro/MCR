@@ -78,6 +78,31 @@ que de continuer silencieusement. Si tu ne vois pas le message final
 `== Termine. ==`, lis le message d'erreur juste au-dessus et relance le script
 (les etapes deja faites ne sont pas refaites inutilement).
 
+### Variante : sans modele a installer (GenIAL)
+
+Si le telechargement du modele est impossible — reseau ferme, machine
+contrainte — l'outil sait faire transcrire par **GenIAL**, l'API interne. Rien
+a installer de lourd, mais l'enregistrement lui est envoye : a arbitrer selon
+la sensibilite de tes reunions.
+
+```bash
+pip install -r requirements-genial.txt
+export GENIAL_TOKEN="<ton jeton>"      # Windows : set GENIAL_TOKEN=<ton jeton>
+python diag_genial.py
+```
+
+Le dernier script verifie en une fois le jeton, le certificat et le format
+audio, et affiche la reponse brute du service. Quand il affiche `SUCCES`,
+ouvre `config.py` et mets :
+
+```python
+moteur: str = "genial"
+```
+
+Puis passe a l'etape 5. Attention : la variable `GENIAL_TOKEN` ne survit pas a
+la fermeture du terminal, il faut la redefinir a chaque fois (ou la mettre dans
+ton `~/.bashrc`).
+
 ## Etape 5 — Lancer le serveur
 
 ### Linux / macOS
@@ -125,6 +150,7 @@ ensuite **http://127.0.0.1:8000** dans **Chrome ou Edge**.
 | Le script echoue pendant `pip install` (compilateur manquant) | `git pull` dans le dossier du projet, puis relance le script |
 | Le telechargement du modele est tres lent ou s'interrompt | Normal sur une connexion instable : relance `python telecharge_modele.py`, il reprend ou il s'est arrete |
 | La page ne s'ouvre pas | Verifie que le terminal du serveur est toujours ouvert et affiche bien `http://127.0.0.1:8000` |
+| GenIAL : "le jeton est absent" | La variable `GENIAL_TOKEN` n'est pas definie dans le terminal qui lance le serveur — elle disparait a chaque fermeture |
 | Le texte est approximatif | Ecoute d'abord l'audio recu (bouton **"Ecouter l'audio"**) : si une voix y est faible ou lointaine, c'est la prise de son qu'il faut corriger. Sinon, voir la section "Ameliorer la qualite de la transcription" du [README](README.md) |
 | Seul mon micro est enregistre | La case « Partager l'audio » n'a pas ete cochee au moment du partage, ou le navigateur n'est pas Chrome/Edge |
 | Autres erreurs | Voir la section **Depannage** du [README principal](README.md#10-depannage) |
