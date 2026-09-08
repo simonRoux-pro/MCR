@@ -1,10 +1,14 @@
-// Capture l'audio dans le navigateur et l'envoie au serveur au fil de l'eau.
+// Capte l'audio dans le navigateur et l'envoie au serveur au fil de l'eau.
 //
 // Le micro seul ne capte pas les autres participants d'une visio (surtout au
 // casque). Le navigateur ne peut pas lire le son du systeme comme une
 // application de bureau : le seul moyen est getDisplayMedia, ou l'utilisateur
-// partage un onglet/ecran en cochant "Partager l'audio". Les deux sources sont
-// ensuite melangees puis enregistrees.
+// partage un onglet/ecran en cochant "Partager l'audio".
+//
+// Les deux sources sont gardees SEPAREES : c'est ce qui permet d'etiqueter le
+// texte (le micro, c'est moi ; le son de l'ordinateur, ce sont les autres).
+// Elles sont aussi melangees, mais seulement pour l'enregistrement d'archive
+// que l'on peut reecouter.
 
 // L'application n'est pas toujours servie a la racine d'un domaine : derriere
 // un portail (Coder, reverse proxy...), elle vit sous un prefixe de chemin.
@@ -18,7 +22,7 @@ function lien(chemin) {
   return RACINE + chemin.replace(/^\//, "");
 }
 
-const DUREE_MORCEAU = 5000;   // envoi d'un morceau toutes les 5 s
+const DUREE_MORCEAU = 5000;   // archive : un morceau toutes les 5 s
 const INTERVALLE_SUIVI = 1000;
 const SEUIL_SILENCE = 0.01;   // en dessous : considere comme du silence
 
@@ -31,6 +35,20 @@ const DEBIT_AUDIO = 128000;   // 128 kbit/s
 // forts sature l'enregistrement, et une voix saturee devient illisible pour le
 // modele.
 const GAIN_SOURCE = 0.75;
+
+// --- Decoupage en segments (mode direct) --------------------------------- //
+// Les morceaux que produit MediaRecorder ne sont PAS decodables isolement :
+// seul le premier porte l'en-tete du format. Pour transcrire pendant la
+// reunion, on redemarre donc l'enregistreur a chaque segment, ce qui donne a
+// chaque fois un fichier complet et autonome.
+const SEGMENT_MIN = 6;        // s : duree avant d'envisager une coupure
+const SEGMENT_MAX = 25;       // s : coupure forcee, meme si ca parle encore
+const SILENCE_COUPURE = 700;  // ms de silence qui declenchent la coupure
+const PERIODE_DECOUPE = 250;  // ms entre deux verifications
+// Un segment dont le niveau n'a jamais depasse ce seuil n'est pas envoye :
+// inutile de faire transcrire du silence, et cela evite un appel sur deux
+// quand les interlocuteurs parlent chacun leur tour.
+const SEUIL_PAROLE = 0.05;
 
 const el = {
   demarrer: document.getElementById("demarrer"),
@@ -52,22 +70,29 @@ const el = {
   ligneSysteme: document.getElementById("ligneSysteme"),
 };
 
-// Moteur annonce par le serveur (local | genial) : la page n'affiche pas les
-// memes choses selon que l'audio reste sur place ou part chez GenIAL.
+// Reglages annonces par le serveur (voir /api/info).
 let moteur = "local";
+let modeDirect = true;
 
 let sessionId = null;
-let enregistreur = null;
+let enregistreurArchive = null;
+let enregistrementEnCours = false;
 let fluxAOuvrir = [];      // flux a fermer en fin d'enregistrement
 let contexteAudio = null;
 let debutEnregistrement = 0;
 let minuterie = null;
 let animation = null;
+let decoupe = null;
+let sondeDirect = null;
+let envois = [];           // envois de segments encore en vol
 
 // Etat REEL de la capture (jamais deduit de la case a cocher : c'est ce qui
 // masquait l'absence de son systeme dans la version precedente).
 let sonSystemeActif = false;
-const mesures = { micro: null, systeme: null };      // AnalyserNode par source
+
+// Une entree par source captee ("micro", "systeme") : sa mesure de niveau, son
+// flux isole, son enregistreur de segments et l'etat du segment en cours.
+let sources = {};
 
 // Les noeuds Web Audio doivent rester references : un noeud dont plus aucune
 // variable ne parle peut etre ramasse par le garbage collector, et le son
@@ -104,20 +129,31 @@ async function api(chemin, options = {}) {
   return reponse.json();
 }
 
-/** Branche un flux sur le melange, avec une mesure de niveau pour l'afficher. */
+/** Branche un flux : mesure de niveau, melange d'archive, et flux isole. */
 function brancher(flux, melange, nom) {
   const source = contexteAudio.createMediaStreamSource(flux);
   const mesure = contexteAudio.createAnalyser();
   mesure.fftSize = 512;
   const gain = contexteAudio.createGain();
   gain.gain.value = GAIN_SOURCE;
+  // Sortie propre a cette source : c'est elle qui part en transcription, et
+  // c'est ce qui permet de savoir qui a parle.
+  const isole = contexteAudio.createMediaStreamDestination();
 
   source.connect(mesure);        // la mesure affiche le niveau reel de la source
   source.connect(gain);
-  gain.connect(melange);
+  gain.connect(melange);         // archive reecoutable
+  gain.connect(isole);
 
-  mesures[nom] = mesure;
-  noeuds.push(source, gain);   // garde une reference (voir commentaire sur `noeuds`)
+  noeuds.push(source, gain, isole);   // garde une reference (voir `noeuds`)
+  sources[nom] = {
+    mesure,
+    flux: isole.stream,
+    enregistreur: null,
+    debutSegment: 0,
+    pic: 0,
+    silenceDepuis: 0,
+  };
 }
 
 /** Niveau sonore instantane d'une source, entre 0 et 1. */
@@ -130,9 +166,20 @@ function niveau(mesure) {
   return max;
 }
 
+/** Releve le niveau d'une source et tient a jour son pic et son silence. */
+function mesurer(nom) {
+  const s = sources[nom];
+  if (!s) return 0;
+  const valeur = niveau(s.mesure);
+  s.pic = Math.max(s.pic, valeur);
+  if (valeur > SEUIL_SILENCE) s.silenceDepuis = 0;
+  else if (!s.silenceDepuis) s.silenceDepuis = Date.now();
+  return valeur;
+}
+
 function rafraichirNiveaux() {
   for (const nom of ["micro", "systeme"]) {
-    const valeur = niveau(mesures[nom]);
+    const valeur = mesurer(nom);
     const barre = nom === "micro" ? el.niveauMicro : el.niveauSysteme;
     // Echelle non lineaire : les niveaux de parole normaux restent lisibles.
     barre.style.width = Math.min(100, Math.sqrt(valeur) * 130) + "%";
@@ -141,14 +188,81 @@ function rafraichirNiveaux() {
   animation = requestAnimationFrame(rafraichirNiveaux);
 }
 
-/** Micro + (optionnel) son de l'ordinateur, melanges en une seule piste. */
+/** Ouvre un nouveau segment pour une source. */
+function demarrerSegment(nom) {
+  const s = sources[nom];
+  if (!s || !s.enregistreur || s.enregistreur.state !== "inactive") return;
+  s.debutSegment = (Date.now() - debutEnregistrement) / 1000;
+  s.pic = 0;
+  s.silenceDepuis = 0;
+  s.enregistreur.start();
+}
+
+async function envoyerSegment(donnees, source, debut) {
+  try {
+    await fetch(lien(`/api/sessions/${sessionId}/segment`), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "X-Source": source,
+        "X-Debut": debut.toFixed(2),
+      },
+      body: donnees,
+    });
+  } catch (e) {
+    etat("Envoi d'un segment interrompu : " + e.message, "erreur");
+  }
+}
+
+/** Enregistreur de segments d'une source : a chaque arret, il repart. */
+function creerEnregistreurSegments(nom) {
+  const s = sources[nom];
+  const enregistreur = new MediaRecorder(s.flux, {
+    mimeType: "audio/webm",
+    audioBitsPerSecond: DEBIT_AUDIO,
+  });
+
+  // ondataavailable arrive AVANT onstop : les valeurs du segment qui vient de
+  // se fermer sont encore celles-ci.
+  enregistreur.ondataavailable = (evenement) => {
+    if (evenement.data.size === 0 || !sessionId) return;
+    if (s.pic < SEUIL_PAROLE) return;   // cette source n'a rien dit
+    envois.push(envoyerSegment(evenement.data, nom, s.debutSegment));
+  };
+  enregistreur.onstop = () => {
+    if (enregistrementEnCours) demarrerSegment(nom);
+  };
+
+  s.enregistreur = enregistreur;
+  demarrerSegment(nom);
+}
+
+/** Ferme les segments assez longs, de preference sur un silence. */
+function verifierDecoupe() {
+  const maintenant = (Date.now() - debutEnregistrement) / 1000;
+  for (const nom of Object.keys(sources)) {
+    const s = sources[nom];
+    if (!s.enregistreur || s.enregistreur.state !== "recording") continue;
+    mesurer(nom);   // aussi mesure ici : requestAnimationFrame s'arrete si
+                    // l'utilisateur passe sur une autre fenetre
+
+    const duree = maintenant - s.debutSegment;
+    const enSilence = s.silenceDepuis && (Date.now() - s.silenceDepuis) > SILENCE_COUPURE;
+    if (duree >= SEGMENT_MAX || (duree >= SEGMENT_MIN && enSilence)) {
+      s.enregistreur.stop();   // le texte partira, puis un segment repart
+    }
+  }
+}
+
+/** Micro + (optionnel) son de l'ordinateur. */
 async function ouvrirSources(avecSonSysteme) {
   const micro = await navigator.mediaDevices.getUserMedia({
     audio: {
       // L'annulation d'echo reste indispensable : sans elle, quelqu'un qui
       // ecoute la reunion sur haut-parleurs voit le son de l'ordinateur revenir
       // une seconde fois par le micro, en decale — deux voix superposees, que
-      // le modele ne sait pas demeler.
+      // le modele ne sait pas demeler. Elle garde aussi les deux sources
+      // distinctes, ce dont depend l'etiquetage des locuteurs.
       echoCancellation: true,
       noiseSuppression: true,
       // Remonte automatiquement les voix trop faibles (micro loin, personne qui
@@ -195,7 +309,6 @@ async function ouvrirSources(avecSonSysteme) {
         // Si l'utilisateur arrete le partage via la barre de Chrome.
         ecran.getAudioTracks()[0].addEventListener("ended", () => {
           sonSystemeActif = false;
-          mesures.systeme = null;
           etat("Partage du son interrompu : la suite est enregistree au micro seul.",
                "erreur");
         });
@@ -214,7 +327,7 @@ function fermerFlux() {
   if (contexteAudio) { contexteAudio.close(); contexteAudio = null; }
   noeuds = [];
   destination = null;
-  mesures.micro = mesures.systeme = null;
+  sources = {};
   if (animation) { cancelAnimationFrame(animation); animation = null; }
 }
 
@@ -222,6 +335,9 @@ async function demarrer() {
   el.demarrer.disabled = true;
   sonSystemeActif = false;
   noeuds = [];
+  sources = {};
+  envois = [];
+  el.texte.value = "";
   etat("Autorisation du micro...");
   try {
     const flux = await ouvrirSources(el.sonSysteme.checked);
@@ -231,12 +347,16 @@ async function demarrer() {
       body: JSON.stringify({ vocabulaire: el.vocabulaire.value }),
     });
     sessionId = session.id;
+    debutEnregistrement = Date.now();
+    enregistrementEnCours = true;
 
-    enregistreur = new MediaRecorder(flux, {
+    // Archive du melange : c'est elle que l'on peut reecouter pour verifier ce
+    // qui a reellement ete capte.
+    enregistreurArchive = new MediaRecorder(flux, {
       mimeType: "audio/webm",
       audioBitsPerSecond: DEBIT_AUDIO,
     });
-    enregistreur.ondataavailable = async (evenement) => {
+    enregistreurArchive.ondataavailable = async (evenement) => {
       if (evenement.data.size === 0 || !sessionId) return;
       try {
         await fetch(lien(`/api/sessions/${sessionId}/morceau`), {
@@ -248,9 +368,14 @@ async function demarrer() {
         etat("Envoi d'un morceau audio interrompu : " + e.message, "erreur");
       }
     };
-    enregistreur.start(DUREE_MORCEAU);
+    enregistreurArchive.start(DUREE_MORCEAU);
 
-    debutEnregistrement = Date.now();
+    if (modeDirect) {
+      Object.keys(sources).forEach(creerEnregistreurSegments);
+      decoupe = setInterval(verifierDecoupe, PERIODE_DECOUPE);
+      sondeDirect = setInterval(rafraichirTexte, INTERVALLE_SUIVI * 2);
+    }
+
     el.arreter.disabled = false;
     el.sonSysteme.disabled = true;
     el.vocabulaire.disabled = true;
@@ -263,21 +388,44 @@ async function demarrer() {
     }, 500);
   } catch (e) {
     etat("Impossible de demarrer : " + e.message, "erreur");
+    enregistrementEnCours = false;
     fermerFlux();
     el.demarrer.disabled = false;
   }
 }
 
-async function arreter() {
-  el.arreter.disabled = true;
-  clearInterval(minuterie);
-  etat("Finalisation de l'enregistrement...");
+/** Recupere le texte deja transcrit pendant que la reunion continue. */
+async function rafraichirTexte() {
+  if (!sessionId) return;
+  try {
+    const session = await api(`/api/sessions/${sessionId}`);
+    if (session.texte) el.texte.value = session.texte;
+  } catch (e) { /* une sonde ratee n'a pas d'importance, la suivante reprend */ }
+}
 
-  // Recupere le dernier morceau avant de cloturer.
-  await new Promise((resoudre) => {
-    enregistreur.onstop = resoudre;
+/** Ferme proprement un enregistreur et attend son dernier bloc. */
+function arreterEnregistreur(enregistreur) {
+  return new Promise((resoudre) => {
+    if (!enregistreur || enregistreur.state === "inactive") return resoudre();
+    enregistreur.onstop = resoudre;   // remplace le redemarrage automatique
     enregistreur.stop();
   });
+}
+
+async function arreter() {
+  el.arreter.disabled = true;
+  enregistrementEnCours = false;      // empeche les segments de repartir
+  clearInterval(minuterie);
+  clearInterval(decoupe);
+  clearInterval(sondeDirect);
+  etat("Finalisation de l'enregistrement...");
+
+  // Dernier segment de chaque source, puis l'archive.
+  await Promise.all(Object.keys(sources)
+    .map((nom) => arreterEnregistreur(sources[nom].enregistreur)));
+  await arreterEnregistreur(enregistreurArchive);
+  await Promise.allSettled(envois);   // tous les segments sont bien partis
+
   fermerFlux();
   el.niveaux.hidden = true;
 
@@ -290,6 +438,16 @@ async function arreter() {
     el.sonSysteme.disabled = false;
     el.vocabulaire.disabled = false;
   }
+}
+
+function terminee(session) {
+  el.texte.value = session.texte;
+  jauge(100);
+  etat("Transcription terminee.", "succes");
+  [el.copier, el.telecharger, el.audio, el.effacer].forEach((b) => (b.disabled = false));
+  el.demarrer.disabled = false;
+  el.sonSysteme.disabled = false;
+  el.vocabulaire.disabled = false;
 }
 
 /** Interroge le serveur jusqu'a la fin de la transcription. */
@@ -305,22 +463,22 @@ function suivre() {
       return;
     }
 
+    if (session.texte) el.texte.value = session.texte;
+
     if (session.etat === "attente") {
       etat("En file d'attente (une autre transcription est en cours)...");
+    } else if (session.etat === "finalisation") {
+      etat(`Derniers segments en cours (${session.segmentsEnAttente} restant`
+           + `${session.segmentsEnAttente > 1 ? "s" : ""})...`);
+      jauge(-1);
     } else if (session.etat === "transcription") {
       etat(session.progression < 0
-        ? "Transcription en cours (GenIAL)... cela peut prendre plusieurs minutes."
+        ? "Transcription en cours... cela peut prendre plusieurs minutes."
         : `Transcription en cours... ${session.progression} %`);
       jauge(session.progression);
     } else if (session.etat === "termine") {
       clearInterval(tic);
-      jauge(100);
-      el.texte.value = session.texte;
-      etat("Transcription terminee.", "succes");
-      [el.copier, el.telecharger, el.audio, el.effacer].forEach((b) => (b.disabled = false));
-      el.demarrer.disabled = false;
-      el.sonSysteme.disabled = false;
-      el.vocabulaire.disabled = false;
+      terminee(session);
     } else if (session.etat === "echec") {
       clearInterval(tic);
       jauge(0);
@@ -373,16 +531,23 @@ el.vocabulaire.addEventListener("change", () => {
   catch (e) { /* idem */ }
 });
 
-// Le serveur dit quel moteur il utilise : la page adapte son sous-titre et
-// masque le vocabulaire, qui n'existe que sur le moteur local.
+// Le serveur dit quel moteur il utilise et s'il transcrit au fil de l'eau :
+// la page adapte son sous-titre, son bouton d'arret et le vocabulaire, qui
+// n'existe que sur le moteur local.
 (async () => {
   try {
     const infos = await api("/api/info");
     moteur = infos.moteur;
+    modeDirect = infos.modeDirect;
     if (!infos.vocabulaireDisponible) el.champVocabulaire.hidden = true;
     if (moteur === "genial") {
       el.sousTitre.textContent = "L'audio est transcrit par GenIAL, le service "
         + "interne. L'enregistrement lui est envoye ; il ne sort pas du reseau.";
+    }
+    if (modeDirect) {
+      el.arreter.textContent = "Arreter";
+      el.texte.placeholder = "Le texte s'affiche ici pendant la reunion, "
+        + `etiquete « ${infos.nomMicro} » et « ${infos.nomSysteme} ».`;
     }
   } catch (e) { /* le serveur repondra de toute facon a la premiere action */ }
 })();

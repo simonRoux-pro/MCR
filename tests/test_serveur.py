@@ -173,3 +173,132 @@ def test_telechargement_de_l_audio_recu(client):
 def test_audio_absent_donne_404(client):
     identifiant = client.post("/api/sessions").json()["id"]
     assert client.get(f"/api/sessions/{identifiant}/audio.webm").status_code == 404
+
+
+# ------------------------------------------------------------------------- #
+# Mode direct : segments transcrits pendant la reunion, etiquetes par source
+# ------------------------------------------------------------------------- #
+
+def _attendre_les_segments():
+    """Vide la file de transcription (les segments tournent en arriere-plan)."""
+    serveur.executeur.shutdown(wait=True)
+    serveur.executeur = type(serveur.executeur)(max_workers=1)
+
+
+def _envoyer_segment(client, identifiant, source, debut, contenu=b"audio"):
+    return client.post(f"/api/sessions/{identifiant}/segment", content=contenu,
+                       headers={"X-Source": source, "X-Debut": str(debut)})
+
+
+def test_le_texte_est_etiquete_par_locuteur_et_remis_dans_l_ordre(client):
+    """Le micro, c'est la personne devant l'ecran ; le son de l'ordinateur, ce
+    sont les autres. Les segments peuvent revenir dans le desordre : c'est
+    l'instant d'enregistrement qui fait foi."""
+    identifiant = client.post("/api/sessions").json()["id"]
+
+    textes = {"0.0": "bonjour a tous", "8.0": "bonjour Simon", "14.0": "on commence"}
+    def faux_transcribe(audio, sortie, progress=None, vocabulaire=""):
+        # le numero du segment est dans le nom du fichier
+        return textes[str(float(open(audio, "rb").read().decode()))]
+
+    with patch.object(serveur, "transcribe", side_effect=faux_transcribe):
+        _envoyer_segment(client, identifiant, "micro", 0.0, b"0.0")
+        _envoyer_segment(client, identifiant, "systeme", 8.0, b"8.0")
+        _envoyer_segment(client, identifiant, "micro", 14.0, b"14.0")
+        _attendre_les_segments()
+        client.post(f"/api/sessions/{identifiant}/terminer")
+
+    etat = client.get(f"/api/sessions/{identifiant}").json()
+    assert etat["etat"] == "termine"
+    assert etat["texte"] == ("Moi : bonjour a tous\n\n"
+                             "Reunion : bonjour Simon\n\n"
+                             "Moi : on commence")
+
+
+def test_les_repliques_consecutives_d_une_source_sont_regroupees(client):
+    """Sinon le texte serait hache d'une etiquette toutes les dix secondes."""
+    identifiant = client.post("/api/sessions").json()["id"]
+    with _transcription_simulee("une phrase"):
+        _envoyer_segment(client, identifiant, "micro", 0.0)
+        _envoyer_segment(client, identifiant, "micro", 10.0)
+        _attendre_les_segments()
+        client.post(f"/api/sessions/{identifiant}/terminer")
+
+    assert client.get(f"/api/sessions/{identifiant}").json()["texte"] == \
+        "Moi : une phrase une phrase"
+
+
+def test_le_texte_est_lisible_pendant_la_reunion(client):
+    """Tout l'interet du mode direct : ne pas attendre la fin."""
+    identifiant = client.post("/api/sessions").json()["id"]
+    with _transcription_simulee("premiere phrase"):
+        _envoyer_segment(client, identifiant, "micro", 0.0)
+        _attendre_les_segments()
+
+    etat = client.get(f"/api/sessions/{identifiant}").json()
+    assert etat["etat"] == "enregistrement"          # la reunion continue
+    assert etat["texte"] == "Moi : premiere phrase"
+
+
+def test_un_segment_en_echec_ne_fait_pas_tomber_la_reunion(client):
+    identifiant = client.post("/api/sessions").json()["id"]
+
+    appels = []
+    def parfois_en_echec(audio, sortie, progress=None, vocabulaire=""):
+        appels.append(audio)
+        if len(appels) == 1:
+            raise RuntimeError("GenIAL a repondu HTTP 500")
+        with open(sortie, "w", encoding="utf-8") as f:
+            f.write("la suite")
+        return "la suite"
+
+    with patch.object(serveur, "transcribe", side_effect=parfois_en_echec):
+        _envoyer_segment(client, identifiant, "micro", 0.0)
+        _envoyer_segment(client, identifiant, "micro", 10.0)
+        _attendre_les_segments()
+        client.post(f"/api/sessions/{identifiant}/terminer")
+
+    etat = client.get(f"/api/sessions/{identifiant}").json()
+    assert etat["etat"] == "termine"
+    assert etat["texte"] == "Moi : la suite"
+
+
+def test_sans_aucun_texte_la_session_echoue_avec_une_piste(client):
+    identifiant = client.post("/api/sessions").json()["id"]
+    with patch.object(serveur, "transcribe", side_effect=RuntimeError("service injoignable")):
+        _envoyer_segment(client, identifiant, "micro", 0.0)
+        _attendre_les_segments()
+        client.post(f"/api/sessions/{identifiant}/terminer")
+
+    etat = client.get(f"/api/sessions/{identifiant}").json()
+    assert etat["etat"] == "echec"
+    assert "service injoignable" in etat["erreur"]
+
+
+def test_la_transcription_en_direct_est_telechargeable(client):
+    identifiant = client.post("/api/sessions").json()["id"]
+    with _transcription_simulee("le compte rendu"):
+        _envoyer_segment(client, identifiant, "systeme", 3.0)
+        _attendre_les_segments()
+        client.post(f"/api/sessions/{identifiant}/terminer")
+
+    fichier = client.get(f"/api/sessions/{identifiant}/transcription.txt")
+    assert fichier.status_code == 200
+    assert fichier.text.strip() == "Reunion : le compte rendu"
+
+
+def test_un_segment_est_refuse_apres_la_fin(client):
+    identifiant = client.post("/api/sessions").json()["id"]
+    with _transcription_simulee():
+        _envoyer_segment(client, identifiant, "micro", 0.0)
+        _attendre_les_segments()
+        client.post(f"/api/sessions/{identifiant}/terminer")
+
+    assert _envoyer_segment(client, identifiant, "micro", 30.0).status_code == 409
+
+
+def test_la_page_annonce_le_mode_et_les_etiquettes(client):
+    infos = client.get("/api/info").json()
+    assert infos["modeDirect"] is serveur.CONFIG.mode_direct
+    assert infos["nomMicro"] == serveur.CONFIG.nom_micro
+    assert infos["nomSysteme"] == serveur.CONFIG.nom_systeme

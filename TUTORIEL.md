@@ -133,9 +133,10 @@ ensuite **http://127.0.0.1:8000** dans **Chrome ou Edge**.
    l'ecran entier) et surtout **coche « Partager l'audio »** en bas de la
    fenetre de selection. Sans cette case, seul ton micro sera enregistre.
    (La video n'est jamais enregistree : seul le son est conserve.)
-5. Parle, laisse la reunion se derouler.
-6. Clique sur **"Arreter et transcrire"** : la transcription demarre, la barre
-   de progression avance, puis le texte s'affiche.
+5. Parle : **le texte apparait au fur et a mesure**, avec l'etiquette de celui
+   qui parle (« Moi » pour ton micro, « Reunion » pour les autres).
+6. A la fin, clique sur **"Arreter"** : les derniers segments finissent d'etre
+   transcrits, puis le texte complet s'affiche.
 7. **Copier** ou **Telecharger (.txt)** pour reprendre le texte ailleurs, et
    **Effacer du serveur** quand tu n'en as plus besoin.
 

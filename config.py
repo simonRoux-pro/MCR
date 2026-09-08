@@ -50,6 +50,23 @@ class Config:
     cpu_threads: int = 0
 
     # ------------------------------------------------------------------ #
+    # Transcription au fil de l'eau
+    # ------------------------------------------------------------------ #
+    # True  : le texte s'affiche pendant la reunion. Le navigateur decoupe
+    #         l'enregistrement en segments (coupes sur un silence pour ne pas
+    #         casser un mot) et chacun est transcrit des son arrivee.
+    # False : ancien fonctionnement, tout est transcrit a la fin. Plus precis
+    #         avec le moteur local, qui garde alors le contexte d'un bout a
+    #         l'autre, mais il faut attendre la fin pour voir quoi que ce soit.
+    mode_direct: bool = True
+
+    # Etiquettes des deux sources dans le texte final. Le micro, c'est la
+    # personne devant l'ordinateur ; le son de l'ordinateur, ce sont les
+    # autres participants de la visio.
+    nom_micro: str = "Moi"
+    nom_systeme: str = "Reunion"
+
+    # ------------------------------------------------------------------ #
     # GenIAL (moteur "genial")
     # ------------------------------------------------------------------ #
     genial_url: str = ("https://api-genial.artemis-ia-dr.intradef.gouv.fr"

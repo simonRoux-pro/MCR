@@ -15,12 +15,14 @@ ensuite dans l'outil de ton choix.
 
 ## Fonctionnement en un coup d'oeil
 
-1. Le navigateur capte le micro et, si demande, le son de l'ordinateur
+1. Le navigateur capte le micro et, si demande, le son de l'ordinateur —
+   les deux sources restant separees
 2. L'audio est envoye au serveur **au fil de l'eau** (rien ne s'accumule en
    memoire : une reunion de 2 h passe sans probleme)
 3. Le serveur transcrit — avec faster-whisper en local (modele
    `large-v3-turbo` par defaut), ou via GenIAL
-4. Le texte s'affiche : a copier, telecharger en `.txt`, ou effacer du serveur
+4. Le texte s'affiche **pendant la reunion**, etiquete « Moi » / « Reunion » :
+   a copier, telecharger en `.txt`, ou effacer du serveur
 
 ---
 
@@ -89,8 +91,9 @@ Puis ouvrir **http://127.0.0.1:8000** dans le navigateur.
 4. Si le son de l'ordinateur est demande, le navigateur demande quoi partager :
    choisis **l'onglet ou l'ecran de la visio** et **coche « Partager l'audio »**.
    Sans cette case, seul ton micro sera enregistre.
-5. A la fin, clique sur **"Arreter et transcrire"**.
-6. Le texte s'affiche : **Copier**, **Telecharger (.txt)**, ou
+5. Le texte apparait au fur et a mesure, avec l'etiquette du locuteur.
+6. A la fin, clique sur **"Arreter"**.
+7. Le texte complet s'affiche : **Copier**, **Telecharger (.txt)**, ou
    **Effacer du serveur**.
 
 ### Capter les autres participants : ce qu'il faut savoir
@@ -192,11 +195,46 @@ Tout se regle dans `config.py` :
 | `vocabulaire` | Mots souffles au modele pour toutes les reunions (le champ de la page s'y ajoute pour une reunion donnee) | vide |
 | `cpu_threads` | Coeurs utilises. `0` = tous | `0` |
 | `language` | Langue de la transcription | `fr` |
+| `mode_direct` | Transcrire pendant la reunion plutot qu'a la fin | `True` |
+| `nom_micro` / `nom_systeme` | Etiquettes des deux sources dans le texte | `Moi` / `Reunion` |
 | `host` / `port` | Adresse d'ecoute du serveur | `127.0.0.1` / `8000` |
 | `transcriptions_simultanees` | Transcriptions en parallele. `1` = les demandes s'enchainent, recommande sur CPU | `1` |
 
 Apres avoir change `whisper_model`, relancer `python telecharge_modele.py`
 pour recuperer le nouveau modele.
+
+### Transcription au fil de l'eau et etiquetage des locuteurs
+
+`mode_direct = True` (defaut) : le navigateur decoupe l'enregistrement en
+segments et chacun est transcrit des son arrivee, si bien que le texte
+s'affiche pendant la reunion.
+
+Deux details qui font que ca marche :
+
+- **Chaque segment est un fichier complet.** Les morceaux que produit le
+  navigateur ne sont pas decodables isolement (seul le premier porte l'en-tete
+  du format) : l'enregistreur est donc redemarre a chaque segment.
+- **La coupure tombe sur un silence.** Les niveaux sonores sont deja mesures
+  pour les vumetres ; ils servent aussi a couper entre deux phrases plutot
+  qu'au milieu d'un mot. A defaut de silence, une coupure forcee intervient au
+  bout de 25 s.
+
+**L'etiquetage des locuteurs** vient de la separation des sources, pas d'une
+reconnaissance vocale : le micro c'est la personne devant l'ecran, le son de
+l'ordinateur ce sont les autres participants. Les deux sont enregistres et
+transcrits separement, puis reassembles dans l'ordre chronologique. C'est
+fiable, gratuit, et ca ne distingue que **deux** interlocuteurs. Aller plus
+loin (« Locuteur 1 », « Locuteur 2 »... a l'interieur de la reunion) demande
+une diarisation, donc un modele d'empreinte vocale — voir les limites plus bas.
+
+Un segment ou une source n'a rien dit n'est pas envoye du tout : cela evite de
+faire transcrire du silence, et divise a peu pres par deux le nombre d'appels
+quand les interlocuteurs parlent chacun leur tour.
+
+`mode_direct = False` retablit l'ancien fonctionnement : tout est transcrit a
+la fin. Avec le moteur local, c'est un peu plus precis (le modele garde le
+contexte d'un bout a l'autre), mais il faut attendre la fin pour voir quoi que
+ce soit.
 
 ### Ameliorer la qualite de la transcription
 
@@ -253,7 +291,19 @@ mis en file d'attente (la page l'indique) plutot que de saturer le processeur.
 
 ---
 
-## 9. Confidentialite
+## 9. Ce que l'outil ne fait pas
+
+- **Distinguer les voix a l'interieur d'une meme source.** L'etiquetage
+  s'appuie sur la separation micro / son de l'ordinateur : deux etiquettes, pas
+  plus. Nommer chaque participant d'une reunion a cinq demanderait une
+  diarisation (pyannote.audio et un modele d'empreinte vocale), ou un service
+  de transcription qui la propose — l'API GenIAL, elle, ne renvoie qu'un texte
+  brut, sans horodatage ni locuteur.
+- **Traduire.** La langue est fixee dans `config.py`.
+
+---
+
+## 10. Confidentialite
 
 - **Avec `moteur = "local"`** (defaut) : la transcription tourne sur la machine
   qui heberge le serveur. Aucun service externe, aucune cle d'API, aucun envoi
@@ -272,7 +322,7 @@ mis en file d'attente (la page l'indique) plutot que de saturer le processeur.
 
 ---
 
-## 10. Depannage
+## 11. Depannage
 
 | Probleme | Cause probable | Solution |
 |---|---|---|

@@ -38,6 +38,14 @@ executeur = ThreadPoolExecutor(max_workers=CONFIG.transcriptions_simultanees)
 
 
 @dataclass
+class Ligne:
+    """Un segment transcrit : ce qui a ete dit, quand, et par quelle source."""
+    debut: float                      # secondes depuis le debut de la reunion
+    source: str                       # "micro" (moi) | "systeme" (les autres)
+    texte: str
+
+
+@dataclass
 class Session:
     """Un enregistrement en cours ou termine."""
     identifiant: str
@@ -51,20 +59,51 @@ class Session:
     erreur: str = ""
     octets_recus: int = 0
     vocabulaire: str = ""             # noms propres / sigles de cette reunion
+
+    # Mode direct : les segments arrivent pendant la reunion et sont transcrits
+    # au fil de l'eau. `en_attente` compte ceux dont on attend encore le texte,
+    # pour ne declarer la session terminee qu'une fois le dernier revenu.
+    lignes: list = field(default_factory=list)
+    en_attente: int = 0
+    segments_recus: int = 0
     verrou: threading.Lock = field(default_factory=threading.Lock)
 
     @property
     def audio(self) -> Path:
         return self.dossier / "reunion.webm"
 
+    @property
+    def dossier_segments(self) -> Path:
+        return self.dossier / "segments"
+
+    def texte_assemble(self) -> str:
+        """Le texte des segments, remis dans l'ordre et etiquete par locuteur.
+
+        Les repliques consecutives d'une meme source sont regroupees : sans
+        cela le texte serait hache d'une etiquette toutes les dix secondes."""
+        if not self.lignes:
+            return ""
+        noms = {"micro": CONFIG.nom_micro, "systeme": CONFIG.nom_systeme}
+        blocs = []
+        for ligne in sorted(self.lignes, key=lambda l: l.debut):
+            if not ligne.texte:
+                continue
+            if blocs and blocs[-1][0] == ligne.source:
+                blocs[-1][1] += " " + ligne.texte
+            else:
+                blocs.append([ligne.source, ligne.texte])
+        return "\n\n".join(f"{noms.get(source, source)} : {texte}"
+                            for source, texte in blocs)
+
     def en_json(self) -> dict:
         return {
             "id": self.identifiant,
             "etat": self.etat,
             "progression": self.progression,
-            "texte": self.texte,
+            "texte": self.texte_assemble() if self.lignes else self.texte,
             "erreur": self.erreur,
             "octetsRecus": self.octets_recus,
+            "segmentsEnAttente": self.en_attente,
         }
 
 
@@ -121,6 +160,79 @@ async def ajouter_morceau(identifiant: str, requete: Request):
     return {"octetsRecus": session.octets_recus}
 
 
+def _transcrire_segment(session: Session, fichier: Path, debut: float, source: str):
+    """Transcrit un segment arrive pendant la reunion (mode direct).
+
+    Un segment qui echoue ne fait pas tomber la reunion entiere : l'erreur est
+    retenue et les suivants continuent d'arriver."""
+    try:
+        texte = transcribe(str(fichier), str(fichier.with_suffix(".txt")),
+                           vocabulaire=session.vocabulaire)
+        texte = texte.strip()
+        if texte:
+            session.lignes.append(Ligne(debut=debut, source=source, texte=texte))
+    except Exception as e:
+        session.erreur = str(e)
+        print(f"[MeetingCT] Session {session.identifiant[:8]} : segment "
+              f"{fichier.name} en echec - {e}", flush=True)
+    finally:
+        with session.verrou:
+            session.en_attente -= 1
+
+
+@app.post("/api/sessions/{identifiant}/segment")
+async def ajouter_segment(identifiant: str, requete: Request):
+    """Recoit un segment autonome (mode direct) et lance sa transcription.
+
+    Le navigateur redemarre son enregistreur a chaque segment : chacun est donc
+    un fichier webm complet, transcriptible seul — ce qu'un simple morceau du
+    flux ne serait pas (seul le premier porte l'en-tete du format)."""
+    session = _session(identifiant)
+    if session.etat != "enregistrement":
+        raise HTTPException(status_code=409, detail="Cette session n'enregistre plus.")
+
+    donnees = await requete.body()
+    if not donnees:
+        return {"segmentsEnAttente": session.en_attente}
+
+    source = requete.headers.get("x-source", "micro")
+    if source not in ("micro", "systeme"):
+        source = "micro"
+    try:
+        debut = float(requete.headers.get("x-debut", "0"))
+    except ValueError:
+        debut = 0.0
+
+    session.dossier_segments.mkdir(exist_ok=True)
+    with session.verrou:
+        session.segments_recus += 1
+        numero = session.segments_recus
+        session.en_attente += 1
+
+    fichier = session.dossier_segments / f"{numero:04d}-{source}.webm"
+    fichier.write_bytes(donnees)
+    executeur.submit(_transcrire_segment, session, fichier, debut, source)
+    return {"segmentsEnAttente": session.en_attente}
+
+
+def _finaliser_si_pret(session: Session) -> Session:
+    """Passe la session a l'etat final quand le dernier segment est revenu."""
+    if session.etat == "finalisation" and session.en_attente == 0:
+        if session.lignes:
+            (session.dossier / "transcription.txt").write_text(
+                session.texte_assemble() + "\n", encoding="utf-8")
+            session.progression = 100
+            session.etat = "termine"
+            print(f"[MeetingCT] Session {session.identifiant[:8]} : terminee "
+                  f"({len(session.lignes)} segments)", flush=True)
+        else:
+            session.etat = "echec"
+            session.erreur = session.erreur or (
+                "Aucun texte n'a pu etre obtenu. Verifie que le micro capte "
+                "bien du son (les barres de niveau bougent pendant l'enregistrement).")
+    return session
+
+
 def _transcrire(session: Session):
     """Transcrit l'enregistrement (execute hors du thread web)."""
     session.etat = "transcription"
@@ -151,6 +263,12 @@ def terminer(identifiant: str):
     if session.etat != "enregistrement":
         return session.en_json()
 
+    if session.segments_recus:
+        # Mode direct : tout a deja ete envoye segment par segment pendant la
+        # reunion, il ne reste qu'a attendre les dernieres reponses.
+        session.etat = "finalisation"
+        return _finaliser_si_pret(session).en_json()
+
     if not session.audio.exists() or session.octets_recus == 0:
         session.etat = "echec"
         session.erreur = ("Aucun son n'a ete recu. Verifie que le micro est autorise "
@@ -165,7 +283,7 @@ def terminer(identifiant: str):
 @app.get("/api/sessions/{identifiant}")
 def etat_session(identifiant: str):
     """Interroge l'avancement (appele regulierement par le navigateur)."""
-    return _session(identifiant).en_json()
+    return _finaliser_si_pret(_session(identifiant)).en_json()
 
 
 @app.delete("/api/sessions/{identifiant}")
@@ -210,6 +328,9 @@ def info():
         "moteur": CONFIG.moteur,
         # Le vocabulaire personnalise n'existe que sur le moteur local.
         "vocabulaireDisponible": CONFIG.moteur == "local",
+        "modeDirect": CONFIG.mode_direct,
+        "nomMicro": CONFIG.nom_micro,
+        "nomSysteme": CONFIG.nom_systeme,
     }
 
 
