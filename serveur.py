@@ -171,6 +171,8 @@ def _transcrire_segment(session: Session, fichier: Path, debut: float, source: s
         texte = texte.strip()
         if texte:
             session.lignes.append(Ligne(debut=debut, source=source, texte=texte))
+        print(f"[MeetingCT] Session {session.identifiant[:8]} : {fichier.name} "
+              f"-> {len(texte)} caracteres", flush=True)
     except Exception as e:
         session.erreur = str(e)
         print(f"[MeetingCT] Session {session.identifiant[:8]} : segment "
@@ -211,6 +213,8 @@ async def ajouter_segment(identifiant: str, requete: Request):
 
     fichier = session.dossier_segments / f"{numero:04d}-{source}.webm"
     fichier.write_bytes(donnees)
+    print(f"[MeetingCT] Session {session.identifiant[:8]} : segment {numero} "
+          f"({source}, {len(donnees) // 1024} Ko, a {debut:.0f} s) recu", flush=True)
     executeur.submit(_transcrire_segment, session, fichier, debut, source)
     return {"segmentsEnAttente": session.en_attente}
 
