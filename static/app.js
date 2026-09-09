@@ -44,7 +44,17 @@ const GAIN_SOURCE = 0.75;
 const SEGMENT_MIN = 6;        // s : duree avant d'envisager une coupure
 const SEGMENT_MAX = 25;       // s : coupure forcee, meme si ca parle encore
 const SILENCE_COUPURE = 700;  // ms de silence qui declenchent la coupure
-const PERIODE_DECOUPE = 250;  // ms entre deux verifications
+const PERIODE_DECOUPE = 100;  // ms entre deux verifications
+
+// Quand le plafond approche sans qu'un vrai blanc soit venu (un monologue),
+// couper a l'instant pile trancherait un mot en deux. On se rabat alors sur un
+// simple CREUX : meme un discours continu retombe entre deux mots, bien en
+// dessous de son propre niveau de parole. Le seuil est relatif au pic du
+// segment, donc valable pour une voix forte comme pour une voix posee.
+const ZONE_SOUPLE = 5;        // s avant le plafond ou un creux suffit
+const CREUX_RELATIF = 0.2;    // un creux = 20 % du pic du segment
+const CREUX_DUREE = 120;      // ms de creux, l'ordre de grandeur d'un blanc
+                              // entre deux mots
 // Un segment dont le niveau n'a jamais depasse ce seuil n'est pas envoye :
 // inutile de faire transcrire du silence, et cela evite un appel sur deux
 // quand les interlocuteurs parlent chacun leur tour.
@@ -153,6 +163,7 @@ function brancher(flux, melange, nom) {
     debutSegment: 0,
     pic: 0,
     silenceDepuis: 0,
+    creuxDepuis: 0,
   };
 }
 
@@ -172,8 +183,15 @@ function mesurer(nom) {
   if (!s) return 0;
   const valeur = niveau(s.mesure);
   s.pic = Math.max(s.pic, valeur);
+
+  // Vrai blanc : personne ne parle.
   if (valeur > SEUIL_SILENCE) s.silenceDepuis = 0;
   else if (!s.silenceDepuis) s.silenceDepuis = Date.now();
+
+  // Creux : ca parle encore, mais on est entre deux mots.
+  if (valeur > s.pic * CREUX_RELATIF) s.creuxDepuis = 0;
+  else if (!s.creuxDepuis) s.creuxDepuis = Date.now();
+
   return valeur;
 }
 
@@ -195,6 +213,7 @@ function demarrerSegment(nom) {
   s.debutSegment = (Date.now() - debutEnregistrement) / 1000;
   s.pic = 0;
   s.silenceDepuis = 0;
+  s.creuxDepuis = 0;
   s.enregistreur.start();
 }
 
@@ -237,7 +256,9 @@ function creerEnregistreurSegments(nom) {
   demarrerSegment(nom);
 }
 
-/** Ferme les segments assez longs, de preference sur un silence. */
+/** Ferme les segments assez longs, en cherchant le meilleur moment pour le
+ *  faire : un blanc entre deux phrases, sinon un creux entre deux mots, et en
+ *  dernier recours le plafond. */
 function verifierDecoupe() {
   const maintenant = (Date.now() - debutEnregistrement) / 1000;
   for (const nom of Object.keys(sources)) {
@@ -247,8 +268,21 @@ function verifierDecoupe() {
                     // l'utilisateur passe sur une autre fenetre
 
     const duree = maintenant - s.debutSegment;
-    const enSilence = s.silenceDepuis && (Date.now() - s.silenceDepuis) > SILENCE_COUPURE;
-    if (duree >= SEGMENT_MAX || (duree >= SEGMENT_MIN && enSilence)) {
+    if (duree < SEGMENT_MIN) continue;
+    const depuis = (instant) => (instant ? Date.now() - instant : 0);
+
+    // 1. Le cas courant : un vrai blanc, entre deux phrases.
+    let couper = depuis(s.silenceDepuis) > SILENCE_COUPURE;
+
+    // 2. Monologue : le plafond approche et personne ne s'est tu. Plutot que
+    //    de trancher a l'instant pile, on attend le premier creux entre deux
+    //    mots — quelques dizaines de millisecondes suffisent.
+    if (!couper && duree >= SEGMENT_MAX - ZONE_SOUPLE) {
+      couper = depuis(s.creuxDepuis) > CREUX_DUREE;
+    }
+
+    // 3. Plafond atteint sans le moindre creux : on coupe quand meme.
+    if (couper || duree >= SEGMENT_MAX) {
       s.enregistreur.stop();   // le texte partira, puis un segment repart
     }
   }

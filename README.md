@@ -214,10 +214,14 @@ Deux details qui font que ca marche :
 - **Chaque segment est un fichier complet.** Les morceaux que produit le
   navigateur ne sont pas decodables isolement (seul le premier porte l'en-tete
   du format) : l'enregistreur est donc redemarre a chaque segment.
-- **La coupure tombe sur un silence.** Les niveaux sonores sont deja mesures
-  pour les vumetres ; ils servent aussi a couper entre deux phrases plutot
-  qu'au milieu d'un mot. A defaut de silence, une coupure forcee intervient au
-  bout de 25 s.
+- **La coupure cherche le bon moment.** Les niveaux sonores sont deja mesures
+  pour les vumetres ; ils servent aussi a choisir ou couper, par ordre de
+  preference : un blanc entre deux phrases ; a defaut, quand le plafond de 25 s
+  approche, un simple creux entre deux mots (le seuil est relatif au niveau de
+  la voix en cours, donc valable pour une voix forte comme pour une voix
+  posee) ; et en tout dernier recours le plafond lui-meme. Un mot coupe en deux
+  devient un mot mal transcrit des deux cotes : c'est le seul defaut du mode
+  direct, et ces deux garde-fous le rendent rare.
 
 **L'etiquetage des locuteurs** vient de la separation des sources, pas d'une
 reconnaissance vocale : le micro c'est la personne devant l'ecran, le son de
