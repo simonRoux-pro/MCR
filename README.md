@@ -82,18 +82,18 @@ Puis ouvrir **http://127.0.0.1:8000** dans le navigateur.
 
 ## 4. Utilisation
 
-1. Coche (ou non) **"Capter aussi le son de l'ordinateur"**.
-2. Renseigne les **"Mots a ne pas ecorcher"** : noms des participants, du
+1. Renseigne les **"Mots a ne pas ecorcher"** : noms des participants, du
    projet, sigles metier. C'est facultatif, mais c'est le geste qui evite les
    orthographes fantaisistes sur le vocabulaire maison. La liste est retenue
    par le navigateur pour les reunions suivantes.
-3. Clique sur **"Demarrer l'enregistrement"**, autorise le micro.
-4. Si le son de l'ordinateur est demande, le navigateur demande quoi partager :
-   choisis **l'onglet ou l'ecran de la visio** et **coche « Partager l'audio »**.
-   Sans cette case, seul ton micro sera enregistre.
-5. Le texte apparait au fur et a mesure, avec l'etiquette du locuteur.
-6. A la fin, clique sur **"Arreter"**.
-7. Le texte complet s'affiche : **Copier**, **Telecharger (.txt)**, ou
+2. Clique sur **"Demarrer l'enregistrement"**, autorise le micro.
+3. Le navigateur demande quoi partager : choisis **l'onglet ou l'ecran de la
+   visio** et verifie que **« Partager l'audio »** est coche. Sans cette case,
+   seul ton micro sera enregistre. Refuser le partage n'annule rien :
+   l'enregistrement se fait alors au micro seul.
+4. Le texte apparait au fur et a mesure, avec l'etiquette du locuteur.
+5. A la fin, clique sur **"Arreter"**.
+6. Le texte complet s'affiche : **Copier**, **Telecharger (.txt)**, ou
    **Effacer du serveur**.
 
 ### Capter les autres participants : ce qu'il faut savoir
@@ -113,6 +113,20 @@ Chrome, arreter la piste video met fin a tout le partage, y compris au son.)
 
 Si le son de l'ordinateur n'est pas disponible ou refuse, l'enregistrement
 continue **avec le micro seul** et la page le signale clairement.
+
+**Ce selecteur revient a chaque enregistrement, et c'est irreductible cote
+code** : les navigateurs n'accordent aucune permission persistante pour la
+capture d'ecran, contrairement au micro. C'est voulu — une page ne doit pas
+pouvoir filmer un ecran sans que l'utilisateur l'ait vu et choisi. Deux pistes
+si la friction est bloquante sur un parc gere :
+
+- **Partager l'onglet de la visio plutot que l'ecran entier** : quand on
+  choisit un onglet, Chrome coche « Partager l'audio » par defaut. Un clic de
+  moins, et plus d'oubli possible.
+- **Une extension de navigateur deployee par la DSI** peut, elle, capturer sans
+  passer par le selecteur (API `desktopCapture`, autorisation accordee une fois
+  a l'installation). C'est la seule facon d'y echapper vraiment, au prix d'une
+  extension a maintenir et a deployer.
 
 ---
 

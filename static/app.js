@@ -63,7 +63,7 @@ const SEUIL_PAROLE = 0.05;
 const el = {
   demarrer: document.getElementById("demarrer"),
   arreter: document.getElementById("arreter"),
-  sonSysteme: document.getElementById("sonSysteme"),
+  rappel: document.getElementById("rappel"),
   vocabulaire: document.getElementById("vocabulaire"),
   champVocabulaire: document.getElementById("champVocabulaire"),
   sousTitre: document.getElementById("sousTitre"),
@@ -289,7 +289,10 @@ function verifierDecoupe() {
 }
 
 /** Micro + (optionnel) son de l'ordinateur. */
-async function ouvrirSources(avecSonSysteme) {
+// Le son de l'ordinateur est toujours demande : c'est la raison d'etre de
+// l'outil (sans lui, on n'enregistre pas les autres participants). Si
+// l'utilisateur refuse le partage, on continue au micro seul.
+async function ouvrirSources() {
   const micro = await navigator.mediaDevices.getUserMedia({
     audio: {
       // L'annulation d'echo reste indispensable : sans elle, quelqu'un qui
@@ -314,7 +317,7 @@ async function ouvrirSources(avecSonSysteme) {
   destination = melange;   // garde une reference (voir commentaire sur `noeuds`)
   brancher(micro, melange, "micro");
 
-  if (avecSonSysteme) {
+  {
     let ecran = null;
     try {
       ecran = await navigator.mediaDevices.getDisplayMedia({
@@ -374,7 +377,7 @@ async function demarrer() {
   el.texte.value = "";
   etat("Autorisation du micro...");
   try {
-    const flux = await ouvrirSources(el.sonSysteme.checked);
+    const flux = await ouvrirSources();
     const session = await api("/api/sessions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -411,7 +414,6 @@ async function demarrer() {
     }
 
     el.arreter.disabled = false;
-    el.sonSysteme.disabled = true;
     el.vocabulaire.disabled = true;
     rafraichirNiveaux();
     minuterie = setInterval(() => {
@@ -469,7 +471,6 @@ async function arreter() {
   } catch (e) {
     etat("Erreur : " + e.message, "erreur");
     el.demarrer.disabled = false;
-    el.sonSysteme.disabled = false;
     el.vocabulaire.disabled = false;
   }
 }
@@ -480,7 +481,6 @@ function terminee(session) {
   etat("Transcription terminee.", "succes");
   [el.copier, el.telecharger, el.audio, el.effacer].forEach((b) => (b.disabled = false));
   el.demarrer.disabled = false;
-  el.sonSysteme.disabled = false;
   el.vocabulaire.disabled = false;
 }
 
@@ -519,8 +519,7 @@ function suivre() {
       etat("Echec : " + session.erreur, "erreur");
       el.audio.disabled = false;   // l'audio reste ecoutable pour diagnostiquer
       el.demarrer.disabled = false;
-      el.sonSysteme.disabled = false;
-      el.vocabulaire.disabled = false;
+        el.vocabulaire.disabled = false;
     }
   }, INTERVALLE_SUIVI);
 }
@@ -588,8 +587,7 @@ el.vocabulaire.addEventListener("change", () => {
 
 // Avertit si le navigateur ne sait pas capter le son de l'ordinateur.
 if (!navigator.mediaDevices?.getDisplayMedia) {
-  el.sonSysteme.checked = false;
-  el.sonSysteme.disabled = true;
+  el.rappel.hidden = true;
   etat("Ce navigateur ne permet pas de capter le son de l'ordinateur : "
        + "utilise Chrome ou Edge pour enregistrer les autres participants.", "erreur");
 }

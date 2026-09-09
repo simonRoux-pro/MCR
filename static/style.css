@@ -68,6 +68,9 @@ h2 { font-size: 1.1rem; margin: 0; }
 }
 .champ input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 
+.rappel { margin: 0; font-size: .9rem; }
+.rappel .discret { color: var(--discret); }
+
 .boutons { display: flex; gap: .75rem; flex-wrap: wrap; margin: 1.25rem 0 1rem; }
 
 button {

@@ -122,22 +122,20 @@ ensuite **http://127.0.0.1:8000** dans **Chrome ou Edge**.
 
 ## Etape 6 — Enregistrer une premiere reunion
 
-1. Laisse coche **"Capter aussi le son de l'ordinateur"** si tu veux
-   enregistrer les autres participants d'une visio.
-2. Dans **"Mots a ne pas ecorcher"**, tape les noms des participants, du
+1. Dans **"Mots a ne pas ecorcher"**, tape les noms des participants, du
    projet, les sigles du metier (separes par des virgules). Facultatif, mais
    c'est ce qui evite les orthographes fantaisistes sur ces mots-la. Le
    navigateur s'en souvient pour les prochaines fois.
-3. Clique sur **"Demarrer l'enregistrement"** et **autorise le micro**.
-4. Le navigateur demande quoi partager : choisis **l'onglet de la visio** (ou
+2. Clique sur **"Demarrer l'enregistrement"** et **autorise le micro**.
+3. Le navigateur demande quoi partager : choisis **l'onglet de la visio** (ou
    l'ecran entier) et surtout **coche « Partager l'audio »** en bas de la
    fenetre de selection. Sans cette case, seul ton micro sera enregistre.
    (La video n'est jamais enregistree : seul le son est conserve.)
-5. Parle : **le texte apparait au fur et a mesure**, avec l'etiquette de celui
+4. Parle : **le texte apparait au fur et a mesure**, avec l'etiquette de celui
    qui parle (« Moi » pour ton micro, « Reunion » pour les autres).
-6. A la fin, clique sur **"Arreter"** : les derniers segments finissent d'etre
+5. A la fin, clique sur **"Arreter"** : les derniers segments finissent d'etre
    transcrits, puis le texte complet s'affiche.
-7. **Copier** ou **Telecharger (.txt)** pour reprendre le texte ailleurs, et
+6. **Copier** ou **Telecharger (.txt)** pour reprendre le texte ailleurs, et
    **Effacer du serveur** quand tu n'en as plus besoin.
 
 ---
