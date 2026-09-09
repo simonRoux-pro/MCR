@@ -321,7 +321,13 @@ async function ouvrirSources() {
     let ecran = null;
     try {
       ecran = await navigator.mediaDevices.getDisplayMedia({
-        video: true,
+        // La video n'est JAMAIS enregistree : seul l'audio de ce partage nous
+        // interesse. Mais Chrome refuse un partage audio seul, il faut donc
+        // bien la demander. Une image par seconde suffit alors largement : la
+        // capture d'ecran ne tourne pas a pleine vitesse pour rien. Une borne
+        // haute est toujours satisfiable (il suffit d'ignorer des images),
+        // donc elle ne peut pas faire echouer le partage.
+        video: { frameRate: { max: 1 } },
         // Pas de traitement sur le son de l'ordinateur : il est deja propre,
         // et le "nettoyer" degraderait les voix des autres participants.
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
