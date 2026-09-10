@@ -36,6 +36,24 @@
              placeholder="Ex : Dupont, Kubernetes, RGPD, Jira">
     </label>
 
+    <label class="champ" for="mode">
+      <strong>Affichage du texte</strong>
+      <small>
+        Au fil de l'eau, la transcription doit aller plus vite que la reunion :
+        c'est le cas quand le calcul part sur un service, beaucoup moins quand
+        il tourne sur ce serveur.
+      </small>
+      <select id="mode">
+        <option value="direct">Pendant la reunion, au fil de l'eau</option>
+        <option value="differe">A la fin, en une fois</option>
+      </select>
+    </label>
+    <p class="avertissement" id="avertissementMode" hidden>
+      La transcription tourne <strong>sur ce serveur</strong> : au fil de l'eau,
+      elle risque de prendre du retard a chaque minute et de ne plus rien avoir
+      de direct. A reserver a un petit modele sur une machine rapide.
+    </p>
+
     <div class="boutons">
       <button id="demarrer" class="principal">Demarrer l'enregistrement</button>
       <button id="arreter" disabled>Arreter</button>

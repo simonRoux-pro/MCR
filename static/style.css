@@ -57,7 +57,8 @@ h2 { font-size: 1.1rem; margin: 0; }
    rien du tout. */
 .champ[hidden] { display: none; }
 .champ small { display: block; color: var(--discret); font-size: .85rem; margin: .15rem 0 .4rem; }
-.champ input {
+.champ input,
+.champ select {
   width: 100%;
   font: inherit;
   padding: .55rem .7rem;
@@ -66,7 +67,17 @@ h2 { font-size: 1.1rem; margin: 0; }
   background: var(--fond);
   color: var(--texte);
 }
-.champ input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.champ input:focus,
+.champ select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+.avertissement {
+  margin: .6rem 0 0;
+  padding: .6rem .75rem;
+  border-radius: .5rem;
+  border: 1px solid var(--rouge);
+  color: var(--rouge);
+  font-size: .85rem;
+}
 
 .rappel { margin: 0; font-size: .9rem; }
 .rappel .discret { color: var(--discret); }

@@ -209,7 +209,7 @@ Tout se regle dans `config.py` :
 | `vocabulaire` | Mots souffles au modele pour toutes les reunions (le champ de la page s'y ajoute pour une reunion donnee) | vide |
 | `cpu_threads` | Coeurs utilises. `0` = tous | `0` |
 | `language` | Langue de la transcription | `fr` |
-| `mode` | `auto` (direct avec GenIAL, differe en local), `direct`, `differe` | `auto` |
+| `mode` | Valeur de depart du selecteur de la page : `auto` (direct avec GenIAL, differe en local), `direct`, `differe` | `auto` |
 | `nom_micro` / `nom_systeme` | Etiquettes des deux sources dans le texte | `Moi` / `Reunion` |
 | `host` / `port` | Adresse d'ecoute du serveur | `127.0.0.1` / `8000` |
 | `transcriptions_simultanees` | Transcriptions en parallele. `1` = les demandes s'enchainent, recommande sur CPU | `1` |
@@ -239,6 +239,11 @@ qualite : c'est un compromis entre vitesse et fidelite, pas un reglage a
 optimiser. Augmenter `transcriptions_simultanees` n'aide pas — le processeur
 est deja saturé, les transcriptions se partageraient simplement les memes
 coeurs.
+
+Ce reglage n'est que la **valeur de depart** : la page propose le choix avant
+chaque enregistrement, et le retient d'une fois sur l'autre. Demander le direct
+a un serveur qui transcrit lui-meme affiche un avertissement, sans l'interdire
+— sur une machine rapide avec un petit modele, ca peut passer.
 
 En mode direct, le navigateur decoupe l'enregistrement en segments et chacun
 est transcrit des son arrivee, si bien que le texte s'affiche pendant la

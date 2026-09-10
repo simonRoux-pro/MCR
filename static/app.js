@@ -65,6 +65,8 @@ const el = {
   arreter: document.getElementById("arreter"),
   rappel: document.getElementById("rappel"),
   vocabulaire: document.getElementById("vocabulaire"),
+  mode: document.getElementById("mode"),
+  avertissementMode: document.getElementById("avertissementMode"),
   champVocabulaire: document.getElementById("champVocabulaire"),
   sousTitre: document.getElementById("sousTitre"),
   etat: document.getElementById("etat"),
@@ -391,6 +393,9 @@ async function demarrer() {
       body: JSON.stringify({ vocabulaire: el.vocabulaire.value }),
     });
     sessionId = session.id;
+    // Le mode est celui choisi dans la page au moment de demarrer : c'est le
+    // navigateur qui decoupe ou non, le serveur s'adapte a ce qu'il recoit.
+    modeDirect = el.mode.value === "direct";
     debutEnregistrement = Date.now();
     enregistrementEnCours = true;
 
@@ -422,6 +427,7 @@ async function demarrer() {
 
     el.arreter.disabled = false;
     el.vocabulaire.disabled = true;
+    el.mode.disabled = true;
     rafraichirNiveaux();
     minuterie = setInterval(() => {
       const secondes = (Date.now() - debutEnregistrement) / 1000;
@@ -486,6 +492,7 @@ async function arreter() {
     etat("Erreur : " + e.message, "erreur");
     el.demarrer.disabled = false;
     el.vocabulaire.disabled = false;
+    el.mode.disabled = false;
   }
 }
 
@@ -496,6 +503,7 @@ function terminee(session) {
   [el.copier, el.telecharger, el.audio, el.effacer].forEach((b) => (b.disabled = false));
   el.demarrer.disabled = false;
   el.vocabulaire.disabled = false;
+  el.mode.disabled = false;
 }
 
 /** Interroge le serveur jusqu'a la fin de la transcription. */
@@ -533,7 +541,8 @@ function suivre() {
       etat("Echec : " + session.erreur, "erreur");
       el.audio.disabled = false;   // l'audio reste ecoutable pour diagnostiquer
       el.demarrer.disabled = false;
-        el.vocabulaire.disabled = false;
+      el.vocabulaire.disabled = false;
+      el.mode.disabled = false;
     }
   }, INTERVALLE_SUIVI);
 }
@@ -578,6 +587,21 @@ el.vocabulaire.addEventListener("change", () => {
   catch (e) { /* idem */ }
 });
 
+// Le mode est retenu d'une fois sur l'autre, et un avertissement s'affiche si
+// le direct est demande a un serveur qui transcrit lui-meme : c'est la que la
+// file d'attente se met a grandir.
+const CLE_MODE = "meeting-ct.mode";
+
+function rafraichirAvertissement() {
+  el.avertissementMode.hidden =
+    !(moteur === "local" && el.mode.value === "direct");
+}
+
+el.mode.addEventListener("change", () => {
+  try { localStorage.setItem(CLE_MODE, el.mode.value); } catch (e) { /* idem */ }
+  rafraichirAvertissement();
+});
+
 // Le serveur dit quel moteur il utilise et s'il transcrit au fil de l'eau :
 // la page adapte son sous-titre, son bouton d'arret et le vocabulaire, qui
 // n'existe que sur le moteur local.
@@ -591,11 +615,18 @@ el.vocabulaire.addEventListener("change", () => {
       el.sousTitre.textContent = "L'audio est transcrit par GenIAL, le service "
         + "interne. L'enregistrement lui est envoye ; il ne sort pas du reseau.";
     }
-    if (modeDirect) {
-      el.arreter.textContent = "Arreter";
-      el.texte.placeholder = "Le texte s'affiche ici pendant la reunion, "
-        + `etiquete « ${infos.nomMicro} » et « ${infos.nomSysteme} ».`;
-    }
+    // Le reglage du serveur donne la valeur de depart ; un choix deja fait
+    // dans ce navigateur l'emporte.
+    el.mode.value = modeDirect ? "direct" : "differe";
+    try {
+      const retenu = localStorage.getItem(CLE_MODE);
+      if (retenu) el.mode.value = retenu;
+    } catch (e) { /* stockage refuse : on garde le reglage du serveur */ }
+    rafraichirAvertissement();
+
+    el.arreter.textContent = "Arreter";
+    el.texte.placeholder = "Le texte apparaitra ici, etiquete "
+      + `« ${infos.nomMicro} » et « ${infos.nomSysteme} ».`;
   } catch (e) { /* le serveur repondra de toute facon a la premiere action */ }
 })();
 
