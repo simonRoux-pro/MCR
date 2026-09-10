@@ -113,6 +113,17 @@ verrou_sessions = threading.Lock()
 app = FastAPI(title="Transcription de reunion")
 
 
+def mode_direct() -> bool:
+    """Faut-il transcrire au fil de l'eau ? Voir CONFIG.mode."""
+    if CONFIG.mode == "direct":
+        return True
+    if CONFIG.mode == "differe":
+        return False
+    # "auto" : seul un moteur qui rend la main plus vite que le temps reel peut
+    # tenir la cadence d'une reunion.
+    return CONFIG.moteur == "genial"
+
+
 def _session(identifiant: str) -> Session:
     with verrou_sessions:
         session = sessions.get(identifiant)
@@ -332,7 +343,7 @@ def info():
         "moteur": CONFIG.moteur,
         # Le vocabulaire personnalise n'existe que sur le moteur local.
         "vocabulaireDisponible": CONFIG.moteur == "local",
-        "modeDirect": CONFIG.mode_direct,
+        "modeDirect": mode_direct(),
         "nomMicro": CONFIG.nom_micro,
         "nomSysteme": CONFIG.nom_systeme,
     }

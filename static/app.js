@@ -95,6 +95,7 @@ let animation = null;
 let decoupe = null;
 let sondeDirect = null;
 let envois = [];           // envois de segments encore en vol
+let enAttente = 0;         // segments envoyes dont le texte n'est pas revenu
 
 // Etat REEL de la capture (jamais deduit de la case a cocher : c'est ce qui
 // masquait l'absence de son systeme dans la version precedente).
@@ -426,7 +427,13 @@ async function demarrer() {
       const secondes = (Date.now() - debutEnregistrement) / 1000;
       // Source reellement captee, pas la case cochee.
       const source = sonSystemeActif ? "micro + son de l'ordinateur" : "micro seul";
-      etat(`<span class="point"></span>Enregistrement en cours (${source}) — ${duree(secondes)}`);
+      // Si la file s'allonge, le dire tout de suite : mieux vaut le voir en
+      // direct que de le decouvrir a l'arret avec cent segments en retard.
+      const retard = enAttente > 2
+        ? ` — <strong>${enAttente} segments en attente</strong>, la transcription ne suit pas`
+        : "";
+      etat(`<span class="point"></span>Enregistrement en cours (${source}) — `
+           + `${duree(secondes)}${retard}`);
     }, 500);
   } catch (e) {
     etat("Impossible de demarrer : " + e.message, "erreur");
@@ -442,6 +449,7 @@ async function rafraichirTexte() {
   try {
     const session = await api(`/api/sessions/${sessionId}`);
     if (session.texte) el.texte.value = session.texte;
+    enAttente = session.segmentsEnAttente;
   } catch (e) { /* une sonde ratee n'a pas d'importance, la suivante reprend */ }
 }
 

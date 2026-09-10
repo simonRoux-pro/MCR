@@ -52,13 +52,18 @@ class Config:
     # ------------------------------------------------------------------ #
     # Transcription au fil de l'eau
     # ------------------------------------------------------------------ #
-    # True  : le texte s'affiche pendant la reunion. Le navigateur decoupe
-    #         l'enregistrement en segments (coupes sur un silence pour ne pas
-    #         casser un mot) et chacun est transcrit des son arrivee.
-    # False : ancien fonctionnement, tout est transcrit a la fin. Plus precis
-    #         avec le moteur local, qui garde alors le contexte d'un bout a
-    #         l'autre, mais il faut attendre la fin pour voir quoi que ce soit.
-    mode_direct: bool = True
+    # Le direct n'a de sens que si la transcription va PLUS VITE que la reunion
+    # ne se deroule. Sinon la file s'allonge sans fin et le texte arrive avec
+    # un retard qui grandit a chaque minute.
+    #
+    # "auto"    : direct avec GenIAL (le calcul part sur le service, il suit),
+    #             differe avec le moteur local (sur CPU, Whisper met souvent
+    #             plus de temps a transcrire un segment qu'il ne dure).
+    # "direct"  : force le direct. A tenter en local avec un petit modele
+    #             ("small", voire "base") sur une machine rapide.
+    # "differe" : force la transcription a la fin. Un peu plus precis en local,
+    #             le modele gardant le contexte d'un bout a l'autre.
+    mode: str = "auto"
 
     # Etiquettes des deux sources dans le texte final. Le micro, c'est la
     # personne devant l'ordinateur ; le son de l'ordinateur, ce sont les

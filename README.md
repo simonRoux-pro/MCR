@@ -209,7 +209,7 @@ Tout se regle dans `config.py` :
 | `vocabulaire` | Mots souffles au modele pour toutes les reunions (le champ de la page s'y ajoute pour une reunion donnee) | vide |
 | `cpu_threads` | Coeurs utilises. `0` = tous | `0` |
 | `language` | Langue de la transcription | `fr` |
-| `mode_direct` | Transcrire pendant la reunion plutot qu'a la fin | `True` |
+| `mode` | `auto` (direct avec GenIAL, differe en local), `direct`, `differe` | `auto` |
 | `nom_micro` / `nom_systeme` | Etiquettes des deux sources dans le texte | `Moi` / `Reunion` |
 | `host` / `port` | Adresse d'ecoute du serveur | `127.0.0.1` / `8000` |
 | `transcriptions_simultanees` | Transcriptions en parallele. `1` = les demandes s'enchainent, recommande sur CPU | `1` |
@@ -219,9 +219,31 @@ pour recuperer le nouveau modele.
 
 ### Transcription au fil de l'eau et etiquetage des locuteurs
 
-`mode_direct = True` (defaut) : le navigateur decoupe l'enregistrement en
-segments et chacun est transcrit des son arrivee, si bien que le texte
-s'affiche pendant la reunion.
+**Le direct n'a de sens que si la transcription va plus vite que la reunion ne
+se deroule.** Sinon la file s'allonge sans fin : le texte arrive avec un retard
+qui grandit a chaque minute, et il reste des dizaines de segments a traiter
+quand la reunion est finie. `CONFIG.mode` tranche donc selon le moteur :
+
+| `mode` | Effet |
+|---|---|
+| `"auto"` (defaut) | direct avec GenIAL, differe avec le moteur local |
+| `"direct"` | force le direct |
+| `"differe"` | force la transcription a la fin |
+
+Pourquoi ce partage : GenIAL rend la main en quelques secondes, le calcul se
+faisant ailleurs. En local sur CPU, `large-v3-turbo` met souvent plus de temps
+a transcrire un segment que le segment ne dure — le direct y est donc
+inutilisable. Pour tenter le direct en local, il faut un modele nettement plus
+leger (`small`, voire `base`) sur une machine rapide, et accepter la perte de
+qualite : c'est un compromis entre vitesse et fidelite, pas un reglage a
+optimiser. Augmenter `transcriptions_simultanees` n'aide pas — le processeur
+est deja saturé, les transcriptions se partageraient simplement les memes
+coeurs.
+
+En mode direct, le navigateur decoupe l'enregistrement en segments et chacun
+est transcrit des son arrivee, si bien que le texte s'affiche pendant la
+reunion. Si la file s'allonge malgre tout, la page l'affiche pendant
+l'enregistrement plutot que de laisser la derive se decouvrir a l'arret.
 
 Deux details qui font que ca marche :
 
@@ -248,11 +270,6 @@ une diarisation, donc un modele d'empreinte vocale — voir les limites plus bas
 Un segment ou une source n'a rien dit n'est pas envoye du tout : cela evite de
 faire transcrire du silence, et divise a peu pres par deux le nombre d'appels
 quand les interlocuteurs parlent chacun leur tour.
-
-`mode_direct = False` retablit l'ancien fonctionnement : tout est transcrit a
-la fin. Avec le moteur local, c'est un peu plus precis (le modele garde le
-contexte d'un bout a l'autre), mais il faut attendre la fin pour voir quoi que
-ce soit.
 
 ### Ameliorer la qualite de la transcription
 

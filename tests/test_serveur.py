@@ -299,6 +299,25 @@ def test_un_segment_est_refuse_apres_la_fin(client):
 
 def test_la_page_annonce_le_mode_et_les_etiquettes(client):
     infos = client.get("/api/info").json()
-    assert infos["modeDirect"] is serveur.CONFIG.mode_direct
+    assert infos["modeDirect"] is serveur.mode_direct()
     assert infos["nomMicro"] == serveur.CONFIG.nom_micro
     assert infos["nomSysteme"] == serveur.CONFIG.nom_systeme
+
+
+def test_le_mode_direct_suit_le_moteur_par_defaut():
+    """Le direct suppose une transcription plus rapide que le temps reel. En
+    local sur CPU ce n'est pas le cas : la file s'allongerait sans fin."""
+    with patch.object(serveur.CONFIG, "mode", "auto"):
+        with patch.object(serveur.CONFIG, "moteur", "local"):
+            assert serveur.mode_direct() is False
+        with patch.object(serveur.CONFIG, "moteur", "genial"):
+            assert serveur.mode_direct() is True
+
+
+def test_le_mode_peut_etre_force_dans_les_deux_sens():
+    with patch.object(serveur.CONFIG, "moteur", "local"):
+        with patch.object(serveur.CONFIG, "mode", "direct"):
+            assert serveur.mode_direct() is True
+    with patch.object(serveur.CONFIG, "moteur", "genial"):
+        with patch.object(serveur.CONFIG, "mode", "differe"):
+            assert serveur.mode_direct() is False
