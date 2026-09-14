@@ -167,7 +167,11 @@ def _texte_de_la_reponse(reponse) -> str:
 
 
 def modeles_disponibles() -> list:
-    """Liste des modeles proposes par GenIAL (pour renseigner config.py)."""
+    """Modeles proposes par GenIAL, avec leurs caracteristiques.
+
+    max_model_len est le critere qui compte pour un compte rendu : une reunion
+    d'une heure represente 12 000 a 15 000 tokens de transcription, qu'il faut
+    pouvoir envoyer d'un bloc."""
     reponse = requests.get(
         CONFIG.genial_url.replace("/audio/transcriptions", "/models"),
         headers={CONFIG.genial_entete_token:
@@ -177,7 +181,7 @@ def modeles_disponibles() -> list:
     )
     if reponse.status_code != 200:
         raise RuntimeError(_message_d_erreur(reponse))
-    return [m.get("id") for m in reponse.json().get("data", [])]
+    return reponse.json().get("data", [])
 
 
 def rediger_cr(transcription: str) -> str:

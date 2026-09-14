@@ -56,9 +56,25 @@ def main() -> int:
     print("\n-- Modeles disponibles (pour genial_modele dans config.py) --")
     try:
         modeles = modeles_disponibles()
-        for nom in modeles:
+        noms = []
+        for modele in modeles:
+            nom = modele.get("id", "?")
+            noms.append(nom)
+            taille = modele.get("max_model_len")
+            classification = modele.get("classification", "")
+            details = []
+            if taille:
+                # ~15 000 tokens pour une reunion d'une heure : en dessous, le
+                # compte rendu portera sur une transcription tronquee.
+                assez = "OK" if taille >= 16000 else "COURT pour 1 h de reunion"
+                details.append(f"contexte {taille} tokens ({assez})")
+            if classification:
+                details.append(classification)
             marque = "  <- configure" if nom == CONFIG.genial_modele else ""
             print(f"  {nom}{marque}")
+            if details:
+                print(f"      {' | '.join(details)}")
+        modeles = noms
         if not CONFIG.genial_modele:
             print("\n  genial_modele n'est pas renseigne : la redaction du "
                   "compte rendu ne marchera pas.")
