@@ -76,6 +76,12 @@ const el = {
   telecharger: document.getElementById("telecharger"),
   audio: document.getElementById("audio"),
   effacer: document.getElementById("effacer"),
+  carteCr: document.getElementById("carteCr"),
+  redigerCr: document.getElementById("redigerCr"),
+  copierCr: document.getElementById("copierCr"),
+  telechargerCr: document.getElementById("telechargerCr"),
+  etatCr: document.getElementById("etatCr"),
+  texteCr: document.getElementById("texteCr"),
   niveaux: document.getElementById("niveaux"),
   niveauMicro: document.getElementById("niveauMicro"),
   niveauSysteme: document.getElementById("niveauSysteme"),
@@ -85,6 +91,8 @@ const el = {
 // Reglages annonces par le serveur (voir /api/info).
 let moteur = "local";
 let modeDirect = true;
+let crDisponible = false;
+let suiviCr = null;
 
 let sessionId = null;
 let enregistreurArchive = null;
@@ -498,6 +506,7 @@ async function arreter() {
 
 function terminee(session) {
   el.texte.value = session.texte;
+  if (crDisponible) el.redigerCr.disabled = !session.texte;
   jauge(100);
   etat("Transcription terminee.", "succes");
   [el.copier, el.telecharger, el.audio, el.effacer].forEach((b) => (b.disabled = false));
@@ -546,6 +555,63 @@ function suivre() {
     }
   }, INTERVALLE_SUIVI);
 }
+
+function etatCr(message, genre = "") {
+  el.etatCr.className = "etat" + (genre ? " " + genre : "");
+  el.etatCr.textContent = message;
+}
+
+/** Interroge le serveur jusqu'a ce que le compte rendu soit redige. */
+function suivreCr() {
+  const identifiant = sessionId;
+  clearInterval(suiviCr);
+  suiviCr = setInterval(async () => {
+    let session;
+    try {
+      session = await api(`/api/sessions/${identifiant}`);
+    } catch (e) {
+      clearInterval(suiviCr);
+      etatCr("Suivi interrompu : " + e.message, "erreur");
+      el.redigerCr.disabled = false;
+      return;
+    }
+
+    if (session.crEtat === "pret") {
+      clearInterval(suiviCr);
+      el.texteCr.value = session.compteRendu;
+      etatCr("Compte rendu redige.", "succes");
+      el.copierCr.disabled = false;
+      el.telechargerCr.disabled = false;
+      el.redigerCr.disabled = false;
+      el.redigerCr.textContent = "Rediger a nouveau";
+    } else if (session.crEtat === "echec") {
+      clearInterval(suiviCr);
+      etatCr("Echec : " + session.crErreur, "erreur");
+      el.redigerCr.disabled = false;
+    }
+  }, INTERVALLE_SUIVI);
+}
+
+el.redigerCr.addEventListener("click", async () => {
+  el.redigerCr.disabled = true;
+  etatCr("Redaction en cours... cela peut prendre une minute ou deux.");
+  try {
+    await api(`/api/sessions/${sessionId}/compte-rendu`, { method: "POST" });
+    suivreCr();
+  } catch (e) {
+    etatCr("Erreur : " + e.message, "erreur");
+    el.redigerCr.disabled = false;
+  }
+});
+
+el.copierCr.addEventListener("click", async () => {
+  await navigator.clipboard.writeText(el.texteCr.value);
+  etatCr("Compte rendu copie dans le presse-papiers.", "succes");
+});
+
+el.telechargerCr.addEventListener("click", () => {
+  window.location = lien(`/api/sessions/${sessionId}/compte-rendu.md`);
+});
 
 el.demarrer.addEventListener("click", demarrer);
 el.arreter.addEventListener("click", arreter);
@@ -611,6 +677,8 @@ el.mode.addEventListener("change", () => {
     moteur = infos.moteur;
     modeDirect = infos.modeDirect;
     if (!infos.vocabulaireDisponible) el.champVocabulaire.hidden = true;
+    crDisponible = infos.compteRenduDisponible;
+    el.carteCr.hidden = !crDisponible;
     if (moteur === "genial") {
       el.sousTitre.textContent = "L'audio est transcrit par GenIAL, le service "
         + "interne. L'enregistrement lui est envoye ; il ne sort pas du reseau.";

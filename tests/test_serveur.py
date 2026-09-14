@@ -321,3 +321,83 @@ def test_le_mode_peut_etre_force_dans_les_deux_sens():
     with patch.object(serveur.CONFIG, "moteur", "genial"):
         with patch.object(serveur.CONFIG, "mode", "differe"):
             assert serveur.mode_direct() is False
+
+
+# ------------------------------------------------------------------------- #
+# Compte rendu redige a partir de la transcription
+# ------------------------------------------------------------------------- #
+
+def _session_transcrite(client, texte="on a parle du budget"):
+    identifiant = client.post("/api/sessions").json()["id"]
+    client.post(f"/api/sessions/{identifiant}/morceau", content=b"audio")
+    with _transcription_simulee(texte):
+        client.post(f"/api/sessions/{identifiant}/terminer")
+        _attendre_les_segments()
+    return identifiant
+
+
+def test_le_compte_rendu_est_redige_a_partir_de_la_transcription(client):
+    identifiant = _session_transcrite(client, "le budget a ete valide")
+
+    recu = {}
+    def faux_rediger(transcription):
+        recu["transcription"] = transcription
+        return "# Compte rendu\n\nLe budget a ete valide."
+
+    with patch("genial.rediger_cr", side_effect=faux_rediger):
+        client.post(f"/api/sessions/{identifiant}/compte-rendu")
+        _attendre_les_segments()
+
+    etat = client.get(f"/api/sessions/{identifiant}").json()
+    assert etat["crEtat"] == "pret"
+    assert etat["compteRendu"].startswith("# Compte rendu")
+    assert recu["transcription"] == "le budget a ete valide"
+
+
+def test_le_compte_rendu_est_telechargeable_avec_la_date_de_la_reunion(client):
+    """Plusieurs comptes rendus finissent dans le meme dossier : le nom doit
+    les distinguer sans avoir a les ouvrir."""
+    identifiant = _session_transcrite(client)
+    with patch("genial.rediger_cr", return_value="# Compte rendu"):
+        client.post(f"/api/sessions/{identifiant}/compte-rendu")
+        _attendre_les_segments()
+
+    reponse = client.get(f"/api/sessions/{identifiant}/compte-rendu.md")
+    assert reponse.status_code == 200
+    assert reponse.text.strip() == "# Compte rendu"
+
+    depose = reponse.headers["content-disposition"]
+    debut = serveur.sessions[identifiant].debut
+    assert f"compte-rendu-{debut:%Y-%m-%d-%Hh%M}.md" in depose
+
+
+def test_la_transcription_aussi_est_nommee_avec_la_date(client):
+    identifiant = _session_transcrite(client)
+    depose = client.get(f"/api/sessions/{identifiant}/transcription.txt") \
+                   .headers["content-disposition"]
+    debut = serveur.sessions[identifiant].debut
+    assert f"transcription-{debut:%Y-%m-%d-%Hh%M}.txt" in depose
+
+
+def test_un_compte_rendu_est_refuse_avant_la_fin_de_la_transcription(client):
+    identifiant = client.post("/api/sessions").json()["id"]
+    assert client.post(f"/api/sessions/{identifiant}/compte-rendu").status_code == 409
+
+
+def test_un_echec_de_redaction_remonte_son_message(client):
+    identifiant = _session_transcrite(client)
+    with patch("genial.rediger_cr",
+               side_effect=RuntimeError("Aucun modele de redaction n'est configure")):
+        client.post(f"/api/sessions/{identifiant}/compte-rendu")
+        _attendre_les_segments()
+
+    etat = client.get(f"/api/sessions/{identifiant}").json()
+    assert etat["crEtat"] == "echec"
+    assert "modele de redaction" in etat["crErreur"]
+
+
+def test_la_page_sait_si_le_compte_rendu_est_possible(client):
+    """Sans modele de langue, le moteur local ne sait pas rediger : la page
+    masque alors la section plutot que d'offrir un bouton qui echouera."""
+    infos = client.get("/api/info").json()
+    assert infos["compteRenduDisponible"] is (serveur.CONFIG.moteur == "genial")

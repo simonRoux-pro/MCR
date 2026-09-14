@@ -90,6 +90,19 @@
     </div>
     <textarea id="texte" placeholder="Le texte apparaitra ici."></textarea>
   </section>
+
+  <section class="carte" id="carteCr" hidden>
+    <div class="entete-resultat">
+      <h2>Compte rendu</h2>
+      <div class="boutons-resultat">
+        <button id="redigerCr" disabled class="principal">Rediger le compte rendu</button>
+        <button id="copierCr" disabled>Copier</button>
+        <button id="telechargerCr" disabled>Telecharger (.md)</button>
+      </div>
+    </div>
+    <div id="etatCr" class="etat"></div>
+    <textarea id="texteCr" placeholder="Le compte rendu sera redige a partir de la transcription, une fois celle-ci terminee."></textarea>
+  </section>
 </main>
 <script src="static/app.js"></script>
 </body>

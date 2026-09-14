@@ -196,6 +196,9 @@ lu dans la variable d'environnement `GENIAL_TOKEN`.
 | `genial_ca` | Chemin du bundle de l'autorite interne, si le certificat n'est pas reconnu | vide |
 | `genial_verifier_tls` | Verification du certificat. `False` = depannage uniquement : la liaison reste chiffree, mais plus rien ne garantit l'identite du serveur | `True` |
 | `genial_timeout` | Attente maximale de la reponse, en secondes | `1800` |
+| `genial_modele` | Modele de redaction du compte rendu (voir `diag_genial.py`) | vide |
+| `genial_stream` | Diffuser la reponse en flux, indispensable pour un texte long | `True` |
+| `consigne_cr` | Consigne envoyee au modele avant la transcription | (voir `config.py`) |
 
 ### Reglages generaux
 
@@ -276,6 +279,30 @@ Un segment ou une source n'a rien dit n'est pas envoye du tout : cela evite de
 faire transcrire du silence, et divise a peu pres par deux le nombre d'appels
 quand les interlocuteurs parlent chacun leur tour.
 
+### Compte rendu automatique (moteur GenIAL)
+
+Une fois la transcription terminee, un bouton **« Rediger le compte rendu »**
+envoie le texte au modele de langue de GenIAL avec une consigne, et rend un
+compte rendu structure (resume, points abordes, decisions, actions). Il se
+copie ou se telecharge en `.md`, **nomme avec la date et l'heure de la
+reunion** — `compte-rendu-2026-09-14-15h30.md` — pour que plusieurs comptes
+rendus ne se confondent pas dans un dossier. La transcription suit la meme
+regle de nommage.
+
+Deux reglages a faire avant que ca marche :
+
+| Reglage | Role |
+|---|---|
+| `genial_modele` | Nom du modele de redaction. **Obligatoire**, et propre a chaque service : `python diag_genial.py` affiche la liste des modeles disponibles |
+| `consigne_cr` | La consigne envoyee au modele, suivie de la transcription. A adapter au style de compte rendu attendu |
+
+`genial_stream` est actif par defaut : la documentation GenIAL indique qu'une
+reponse longue fait expirer la requete si elle n'est pas diffusee en flux, et
+un compte rendu est precisement une reponse longue.
+
+La section n'apparait pas avec le moteur local : sans modele de langue, il n'y
+a rien pour rediger.
+
 ### Ameliorer la qualite de la transcription
 
 Par ordre d'efficacite, si le texte n'est pas assez propre :
@@ -328,6 +355,26 @@ du plus gros modele, mais son decodeur allege le rend **plus rapide que
 
 Avec `transcriptions_simultanees = 1`, plusieurs utilisateurs simultanes sont
 mis en file d'attente (la page l'indique) plutot que de saturer le processeur.
+
+---
+
+### Quotas GenIAL : a regarder avant de deployer
+
+La documentation GenIAL annonce, pour un **compte individuel**, **500 requetes
+par jour et 5 000 par mois**, par route.
+
+Or le mode direct decoupe la reunion en segments de 6 a 25 s et fait **un appel
+par segment** : de l'ordre de 150 a 250 appels pour une reunion d'une heure.
+Deux reunions par jour suffisent donc a epuiser le quota d'un compte
+individuel. Trois options :
+
+- **Le mode differe** : un seul appel par reunion, quelle que soit sa duree.
+- **Allonger les segments** (`SEGMENT_MIN` et `SEGMENT_MAX` en haut de
+  `static/app.js`) : moins d'appels, direct moins vif.
+- **Un compte de service**, dont le quota est plus eleve (demande a deposer
+  sur le guichet GenIAL).
+
+Le compte rendu, lui, ne coute qu'un appel supplementaire par reunion.
 
 ---
 

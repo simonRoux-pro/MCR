@@ -20,7 +20,7 @@ import wave
 import requests
 
 from config import CONFIG
-from genial import TIMEOUT_CONNEXION, _verification_tls
+from genial import TIMEOUT_CONNEXION, _verification_tls, modeles_disponibles
 
 
 def fichier_de_test() -> str:
@@ -52,6 +52,22 @@ def main() -> int:
         print(f'  Windows : set {CONFIG.genial_variable_token}=<ton jeton>')
         return 1
     print(f"Jeton      : present ({len(jeton)} caracteres)")
+
+    print("\n-- Modeles disponibles (pour genial_modele dans config.py) --")
+    try:
+        modeles = modeles_disponibles()
+        for nom in modeles:
+            marque = "  <- configure" if nom == CONFIG.genial_modele else ""
+            print(f"  {nom}{marque}")
+        if not CONFIG.genial_modele:
+            print("\n  genial_modele n'est pas renseigne : la redaction du "
+                  "compte rendu ne marchera pas.")
+            print("  Choisis un nom ci-dessus et mets-le dans config.py.")
+        elif CONFIG.genial_modele not in modeles:
+            print(f"\n  ATTENTION : genial_modele vaut "
+                  f"'{CONFIG.genial_modele}', absent de cette liste.")
+    except Exception as e:
+        print(f"  Liste indisponible : {e}")
 
     chemin = fichier_de_test()
     print(f"\nEnvoi d'un fichier de test ({os.path.getsize(chemin)} octets)...")

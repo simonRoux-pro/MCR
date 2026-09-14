@@ -102,6 +102,41 @@ class Config:
     # a transcrire cote service : 30 minutes par defaut.
     genial_timeout: int = 1800
 
+    # --- Redaction du compte rendu (chat/completions) --- #
+    genial_url_chat: str = ("https://api-genial.artemis-ia-dr.intradef.gouv.fr"
+                            "/v1/chat/completions")
+
+    # Nom du modele de redaction. A renseigner : la liste depend du service.
+    # `python diag_genial.py` affiche les modeles disponibles.
+    genial_modele: str = ""
+
+    # La documentation GenIAL le dit : une reponse longue fait expirer la
+    # requete si elle n'est pas diffusee en flux. Un compte rendu EST une
+    # reponse longue, le flux est donc actif par defaut.
+    genial_stream: bool = True
+
+    genial_max_tokens: int = 4000
+    genial_temperature: float = 0.2   # bas : on resume, on n'invente pas
+
+    # Consigne envoyee au modele, suivie de la transcription. A adapter au
+    # style de compte rendu attendu dans le service.
+    consigne_cr: str = (
+        "Tu rédiges le compte rendu d'une réunion à partir de sa transcription "
+        "automatique. Cette transcription contient des erreurs de "
+        "reconnaissance vocale et des tournures orales : ne les reprends pas "
+        "telles quelles.\n\n"
+        "Produis un compte rendu en français, structuré ainsi :\n"
+        "- un résumé de quelques lignes ;\n"
+        "- les points abordés, regroupés par sujet ;\n"
+        "- les décisions prises ;\n"
+        "- les actions à mener, avec la personne qui en a la charge lorsque la "
+        "transcription permet de l'identifier.\n\n"
+        "N'invente rien : une information absente de la transcription ne doit "
+        "pas apparaître. Les intervenants sont désignés par leur étiquette en "
+        "début de réplique.\n\n"
+        "Transcription :\n"
+    )
+
     # ------------------------------------------------------------------ #
     # Serveur web
     # ------------------------------------------------------------------ #

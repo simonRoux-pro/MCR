@@ -13,6 +13,7 @@ transcription tourne en local, sans appel a un service externe.
 """
 import netfix  # noqa: F401  -- contournements reseau, DOIT rester le premier import (voir netfix.py)
 
+import datetime
 import shutil
 import tempfile
 import threading
@@ -66,6 +67,12 @@ class Session:
     lignes: list = field(default_factory=list)
     en_attente: int = 0
     segments_recus: int = 0
+
+    # Compte rendu redige a partir de la transcription (moteur GenIAL).
+    compte_rendu: str = ""
+    cr_etat: str = "absent"           # absent | en_cours | pret | echec
+    cr_erreur: str = ""
+    debut: datetime.datetime = field(default_factory=datetime.datetime.now)
     verrou: threading.Lock = field(default_factory=threading.Lock)
 
     @property
@@ -75,6 +82,11 @@ class Session:
     @property
     def dossier_segments(self) -> Path:
         return self.dossier / "segments"
+
+    def nom_de_fichier(self, quoi: str, extension: str) -> str:
+        """Nom propose au telechargement : date et heure de la reunion, pour
+        que plusieurs comptes rendus ne se confondent pas dans un dossier."""
+        return f"{quoi}-{self.debut:%Y-%m-%d-%Hh%M}.{extension}"
 
     def texte_assemble(self) -> str:
         """Le texte des segments, remis dans l'ordre et etiquete par locuteur.
@@ -104,6 +116,9 @@ class Session:
             "erreur": self.erreur,
             "octetsRecus": self.octets_recus,
             "segmentsEnAttente": self.en_attente,
+            "compteRendu": self.compte_rendu,
+            "crEtat": self.cr_etat,
+            "crErreur": self.cr_erreur,
         }
 
 
@@ -295,6 +310,52 @@ def terminer(identifiant: str):
     return session.en_json()
 
 
+def _rediger(session: Session):
+    """Demande le compte rendu a GenIAL (hors du thread web)."""
+    try:
+        # Importe ici : le moteur local n'a pas de modele de langue, et ne doit
+        # pas dependre de ce module.
+        from genial import rediger_cr
+        texte = rediger_cr(session.texte_assemble() or session.texte)
+        (session.dossier / "compte-rendu.md").write_text(texte + "\n",
+                                                        encoding="utf-8")
+        session.compte_rendu = texte
+        session.cr_etat = "pret"
+    except Exception as e:
+        session.cr_erreur = str(e)
+        session.cr_etat = "echec"
+        print(f"[MeetingCT] Session {session.identifiant[:8]} : compte rendu "
+              f"en echec - {e}", flush=True)
+
+
+@app.post("/api/sessions/{identifiant}/compte-rendu")
+def demander_compte_rendu(identifiant: str):
+    """Lance la redaction du compte rendu a partir de la transcription."""
+    session = _session(identifiant)
+    if session.etat != "termine":
+        raise HTTPException(status_code=409,
+                            detail="La transcription n'est pas terminee.")
+    if session.cr_etat == "en_cours":
+        return session.en_json()
+
+    session.cr_etat = "en_cours"
+    session.cr_erreur = ""
+    executeur.submit(_rediger, session)
+    return session.en_json()
+
+
+@app.get("/api/sessions/{identifiant}/compte-rendu.md")
+def telecharger_compte_rendu(identifiant: str):
+    """Telechargement du compte rendu, nomme avec la date de la reunion."""
+    session = _session(identifiant)
+    fichier = session.dossier / "compte-rendu.md"
+    if session.cr_etat != "pret" or not fichier.exists():
+        raise HTTPException(status_code=409,
+                            detail="Le compte rendu n'est pas pret.")
+    return FileResponse(fichier, media_type="text/markdown; charset=utf-8",
+                        filename=session.nom_de_fichier("compte-rendu", "md"))
+
+
 @app.get("/api/sessions/{identifiant}")
 def etat_session(identifiant: str):
     """Interroge l'avancement (appele regulierement par le navigateur)."""
@@ -332,7 +393,7 @@ def telecharger(identifiant: str):
         raise HTTPException(status_code=409, detail="La transcription n'est pas terminee.")
     return FileResponse(session.dossier / "transcription.txt",
                         media_type="text/plain; charset=utf-8",
-                        filename="transcription.txt")
+                        filename=session.nom_de_fichier("transcription", "txt"))
 
 
 @app.get("/api/info")
@@ -346,6 +407,9 @@ def info():
         "modeDirect": mode_direct(),
         "nomMicro": CONFIG.nom_micro,
         "nomSysteme": CONFIG.nom_systeme,
+        # La redaction du compte rendu passe par le modele de langue de
+        # GenIAL : elle n'existe pas avec le moteur local.
+        "compteRenduDisponible": CONFIG.moteur == "genial",
     }
 
 
