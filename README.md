@@ -62,7 +62,33 @@ telechargement reprend tout seul en cas de coupure).
 Le modele est ainsi deja sur le disque avant la premiere reunion : rien ne se
 telecharge au moment ou tu attends ton texte.
 
-## 3. Lancer le serveur
+## 3. Le jeton GenIAL : une fois pour toutes
+
+Le jeton n'est jamais ecrit dans le code. Il se pose **une seule fois** dans un
+fichier `.env` a la racine du projet, que git ignore :
+
+```bash
+cp .env.exemple .env
+```
+
+puis on y renseigne `GENIAL_TOKEN=...`. L'application lit ce fichier au
+demarrage, **avec ou sans conteneur** — plus besoin de refaire
+`export GENIAL_TOKEN=...` a chaque terminal.
+
+Une variable deja posee dans l'environnement (par le terminal ou par Docker)
+l'emporte sur le fichier : le `.env` est un defaut pratique, pas une contrainte.
+
+Le meme fichier accepte quelques reglages de deploiement, qui surchargent
+`config.py` sans qu'on ait a le modifier :
+
+| Variable | Remplace |
+|---|---|
+| `MEETING_MOTEUR` | `moteur` (`local` / `genial`) |
+| `MEETING_MODE` | `mode` (`auto` / `direct` / `differe`) |
+| `MEETING_MODELE` | `genial_modele` |
+| `MEETING_HOST` / `MEETING_PORT` | adresse et port d'ecoute |
+
+## 4. Lancer le serveur
 
 ### Linux / macOS
 ```bash
@@ -80,7 +106,40 @@ Puis ouvrir **http://127.0.0.1:8000** dans le navigateur.
 
 ---
 
-## 4. Utilisation
+### En conteneur (Docker)
+
+```bash
+cp .env.exemple .env          # et y mettre le jeton
+docker compose up -d --build
+```
+
+L'application repond sur http://127.0.0.1:8000. Les commandes utiles :
+
+| Commande | Effet |
+|---|---|
+| `docker compose up -d --build` | construit l'image et demarre en arriere-plan |
+| `docker compose logs -f` | suit les messages du serveur (c'est la qu'on lit les erreurs) |
+| `docker compose restart` | relance apres un changement de `.env` |
+| `docker compose down` | arrete et supprime le conteneur |
+
+Ce que le conteneur apporte : l'application redemarre seule avec la machine,
+ne depend plus de la version de Python installee, et s'installe sans venv ni
+`pip`. Ce qu'il ne change pas : la capture reste dans le navigateur de chaque
+utilisateur.
+
+**L'image ne convient qu'au moteur GenIAL.** Le moteur local demanderait
+d'installer `requirements.txt` et de monter le modele (1,6 Go) depuis un
+volume — jamais de l'embarquer dans l'image.
+
+**Point de vigilance avant d'ouvrir a d'autres postes :** les navigateurs
+n'autorisent le micro que sur `localhost` ou en **HTTPS**. Un conteneur servi
+en HTTP simple sur une adresse reseau ne pourra rien enregistrer. Il faut donc
+un reverse proxy avec certificat devant (nginx, Caddy, Traefik). C'est la vraie
+contrainte de deploiement, bien plus que Docker.
+
+---
+
+## 5. Utilisation
 
 1. Renseigne les **"Mots a ne pas ecorcher"** : noms des participants, du
    projet, sigles metier. C'est facultatif, mais c'est le geste qui evite les
@@ -130,7 +189,7 @@ si la friction est bloquante sur un parc gere :
 
 ---
 
-## 5. Ouvrir l'acces aux autres postes
+## 6. Ouvrir l'acces aux autres postes
 
 Par defaut le serveur n'ecoute que sur `127.0.0.1` : accessible **depuis le
 poste qui l'heberge uniquement**. Pour en faire un service utilisable par une
@@ -156,7 +215,7 @@ Les autres postes ouvrent alors `http://<ip-du-serveur>:8000`.
 
 ---
 
-## 6. Configuration
+## 7. Configuration
 
 ### Choisir le moteur de transcription
 
@@ -327,7 +386,7 @@ est attenuee avant melange pour ne pas saturer l'enregistrement.
 
 ---
 
-## 7. Tests
+## 8. Tests
 
 ```bash
 pip install -r requirements-dev.txt
@@ -341,7 +400,7 @@ Whisper installe.
 
 ---
 
-## 8. Performances sur CPU
+## 9. Performances sur CPU
 
 Tout tourne sur CPU, aucun GPU requis. Compter de l'ordre de la duree de la
 reunion, parfois davantage, selon la machine et le modele choisi. Le filtre de
@@ -378,7 +437,7 @@ Le compte rendu, lui, ne coute qu'un appel supplementaire par reunion.
 
 ---
 
-## 9. Ce que l'outil ne fait pas
+## 10. Ce que l'outil ne fait pas
 
 - **Distinguer les voix a l'interieur d'une meme source.** L'etiquetage
   s'appuie sur la separation micro / son de l'ordinateur : deux etiquettes, pas
@@ -390,7 +449,7 @@ Le compte rendu, lui, ne coute qu'un appel supplementaire par reunion.
 
 ---
 
-## 10. Confidentialite
+## 11. Confidentialite
 
 - **Avec `moteur = "local"`** (defaut) : la transcription tourne sur la machine
   qui heberge le serveur. Aucun service externe, aucune cle d'API, aucun envoi
@@ -409,7 +468,7 @@ Le compte rendu, lui, ne coute qu'un appel supplementaire par reunion.
 
 ---
 
-## 11. Depannage
+## 12. Depannage
 
 | Probleme | Cause probable | Solution |
 |---|---|---|
@@ -419,7 +478,7 @@ Le compte rendu, lui, ne coute qu'un appel supplementaire par reunion.
 | Le micro n'est pas propose sur un autre poste | Les navigateurs exigent HTTPS hors `localhost` | Voir la section "Ouvrir l'acces aux autres postes" |
 | Transcription approximative, mots inventes | Voix trop faible a la prise de son, ou modele trop leger | Ecouter l'audio recu (bouton **"Ecouter l'audio"**) pour situer le probleme, puis voir "Ameliorer la qualite de la transcription" |
 | "Aucun son n'a ete recu" a l'arret | Micro refuse ou muet | Verifier l'autorisation du micro dans le navigateur et le peripherique d'entree du systeme |
-| GenIAL : "le jeton est absent" | Variable d'environnement non definie | `export GENIAL_TOKEN="<jeton>"` dans le terminal qui lance le serveur (elle ne survit pas a une fermeture de terminal) |
+| GenIAL : "le jeton est absent" | Ni `.env`, ni variable d'environnement | `cp .env.exemple .env` puis y renseigner `GENIAL_TOKEN`. En conteneur, `docker compose restart` apres modification du `.env` |
 | GenIAL : erreur de certificat | Autorite interne inconnue de Python | Renseigner `genial_ca` dans `config.py` avec le bundle de l'autorite ; `genial_verifier_tls = False` en depannage seulement |
 | GenIAL : HTTP 415 ou message sur le format | Le service n'accepte pas le webm produit par le navigateur | Lancer `python diag_genial.py` : il teste avec un WAV. Si le WAV passe et pas le webm, il faut convertir avant l'envoi — me le signaler |
 | Installation qui echoue sur un paquet (`metadata-generation-failed`, "Microsoft Visual C++ required") | Version de Python tres recente : pas de wheel precompile pour ce paquet | `git pull` pour recuperer un `requirements.txt` a jour, puis relancer l'installation |

@@ -87,7 +87,7 @@ la sensibilite de tes reunions.
 
 ```bash
 pip install -r requirements-genial.txt
-export GENIAL_TOKEN="<ton jeton>"      # Windows : set GENIAL_TOKEN=<ton jeton>
+cp .env.exemple .env                   # puis y renseigner GENIAL_TOKEN
 python diag_genial.py
 ```
 
@@ -99,9 +99,8 @@ ouvre `config.py` et mets :
 moteur: str = "genial"
 ```
 
-Puis passe a l'etape 5. Attention : la variable `GENIAL_TOKEN` ne survit pas a
-la fermeture du terminal, il faut la redefinir a chaque fois (ou la mettre dans
-ton `~/.bashrc`).
+Puis passe a l'etape 5. Le fichier `.env` est lu a chaque demarrage : le jeton
+ne se redemande plus. Il n'est jamais versionne.
 
 ## Etape 5 — Lancer le serveur
 
@@ -149,7 +148,7 @@ ensuite **http://127.0.0.1:8000** dans **Chrome ou Edge**.
 | Le script echoue pendant `pip install` (compilateur manquant) | `git pull` dans le dossier du projet, puis relance le script |
 | Le telechargement du modele est tres lent ou s'interrompt | Normal sur une connexion instable : relance `python telecharge_modele.py`, il reprend ou il s'est arrete |
 | La page ne s'ouvre pas | Verifie que le terminal du serveur est toujours ouvert et affiche bien `http://127.0.0.1:8000` |
-| GenIAL : "le jeton est absent" | La variable `GENIAL_TOKEN` n'est pas definie dans le terminal qui lance le serveur — elle disparait a chaque fermeture |
+| GenIAL : "le jeton est absent" | Le fichier `.env` n'existe pas ou `GENIAL_TOKEN` y est vide : `cp .env.exemple .env` puis renseigne-le |
 | Le texte est approximatif | Ecoute d'abord l'audio recu (bouton **"Ecouter l'audio"**) : si une voix y est faible ou lointaine, c'est la prise de son qu'il faut corriger. Sinon, voir la section "Ameliorer la qualite de la transcription" du [README](README.md) |
 | Seul mon micro est enregistre | La case « Partager l'audio » n'a pas ete cochee au moment du partage, ou le navigateur n'est pas Chrome/Edge |
 | Autres erreurs | Voir la section **Depannage** du [README principal](README.md#10-depannage) |

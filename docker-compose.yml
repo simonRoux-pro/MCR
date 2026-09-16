@@ -1,0 +1,41 @@
+# Lancement de l'application en conteneur.
+#
+#   docker compose up -d --build     demarre (et reconstruit si le code a change)
+#   docker compose logs -f           suit les messages du serveur
+#   docker compose down              arrete
+#
+# Le jeton GenIAL vient du fichier .env, jamais de ce fichier-ci : celui-ci est
+# versionne, .env ne l'est pas.
+
+services:
+  meeting-ct:
+    build: .
+    container_name: meeting-ct
+
+    # "8000:8000" = le port 8000 de la machine est redirige vers le port 8000
+    # du conteneur. Pour servir sur un autre port de la machine, changer
+    # seulement le nombre de GAUCHE : "9000:8000".
+    ports:
+      - "8000:8000"
+
+    # Le fichier .env est lu au demarrage et ses variables sont posees dans le
+    # conteneur. C'est ici que GENIAL_TOKEN arrive, sans jamais entrer dans
+    # l'image.
+    env_file:
+      - .env
+
+    # Reglages de deploiement, surchargeables sans toucher a config.py.
+    environment:
+      MEETING_HOST: "0.0.0.0"
+      # MEETING_MOTEUR: "genial"
+      # MEETING_MODELE: "<nom du modele de redaction>"
+      # MEETING_MODE: "differe"
+
+    # Redemarre tout seul apres un plantage ou un redemarrage de la machine,
+    # mais reste arrete si on l'a arrete a la main.
+    restart: unless-stopped
+
+    # L'audio et les transcriptions vivent dans un dossier temporaire du
+    # conteneur, et disparaissent donc a chaque redemarrage. C'est voulu : rien
+    # ne s'accumule, rien ne survit a une reunion. Pour les conserver, monter un
+    # volume sur /tmp — et assumer qu'il faudra alors les effacer soi-meme.

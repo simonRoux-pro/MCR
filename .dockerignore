@@ -1,0 +1,23 @@
+# Ce qui ne doit pas entrer dans l'image.
+
+# Secrets : .env est lu au DEMARRAGE par docker compose (env_file), il ne doit
+# surtout pas etre copie dans l'image — une image se partage, un secret non.
+.env
+config_local.py
+
+# Lourd et inutile dans l'image
+.venv/
+venv/
+models/
+*.bin
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.git/
+
+# Documentation et donnees de travail
+docs/
+*.pdf
+*.webm
+*.wav
+*.mp3

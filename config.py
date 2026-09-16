@@ -1,6 +1,48 @@
 import os
 from dataclasses import dataclass
 
+DOSSIER = os.path.dirname(os.path.abspath(__file__))
+
+
+def charger_env_local(nom: str = ".env") -> None:
+    """Lit un fichier .env pose a cote du code et en tire des variables.
+
+    Evite de refaire `export GENIAL_TOKEN=...` a chaque nouveau terminal : le
+    jeton est ecrit une fois dans ce fichier, qui n'est jamais versionne (voir
+    .gitignore). Docker lit le meme fichier, il n'y a donc qu'un seul endroit
+    ou poser un secret.
+
+    Une variable deja definie dans l'environnement n'est PAS remplacee : ce qui
+    vient du systeme, du terminal ou de Docker reste prioritaire sur le
+    fichier.
+    """
+    fichier = os.path.join(DOSSIER, nom)
+    if not os.path.isfile(fichier):
+        return
+    with open(fichier, encoding="utf-8") as f:
+        for ligne in f:
+            ligne = ligne.strip()
+            if not ligne or ligne.startswith("#") or "=" not in ligne:
+                continue
+            cle, _, valeur = ligne.partition("=")
+            # Les guillemets autour de la valeur sont une habitude de shell,
+            # ils ne font pas partie du secret.
+            os.environ.setdefault(cle.strip(), valeur.strip().strip("\"'"))
+
+
+# AVANT la lecture des reglages ci-dessous : certains s'appuient dessus.
+charger_env_local()
+
+
+def _reglage(variable: str, defaut: str) -> str:
+    """Valeur d'un reglage, surchargeable par variable d'environnement.
+
+    Sert au deploiement : on change l'adresse d'ecoute ou le moteur sans
+    modifier ni reconstruire quoi que ce soit, en posant la variable dans .env
+    ou dans docker-compose.yml.
+    """
+    return os.environ.get(variable, defaut)
+
 
 @dataclass
 class Config:
@@ -12,7 +54,7 @@ class Config:
     # "genial" : l'API interne GenIAL. Aucun modele a installer et aucun calcul
     #            sur cette machine, mais l'audio de la reunion est envoye a ce
     #            service. A choisir la ou le modele ne peut pas etre installe.
-    moteur: str = "local"
+    moteur: str = _reglage("MEETING_MOTEUR", "local")
 
     # ------------------------------------------------------------------ #
     # Transcription locale (moteur "local")
@@ -63,7 +105,7 @@ class Config:
     #             ("small", voire "base") sur une machine rapide.
     # "differe" : force la transcription a la fin. Un peu plus precis en local,
     #             le modele gardant le contexte d'un bout a l'autre.
-    mode: str = "auto"
+    mode: str = _reglage("MEETING_MODE", "auto")
 
     # Etiquettes des deux sources dans le texte final. Le micro, c'est la
     # personne devant l'ordinateur ; le son de l'ordinateur, ce sont les
@@ -108,7 +150,7 @@ class Config:
 
     # Nom du modele de redaction. A renseigner : la liste depend du service.
     # `python diag_genial.py` affiche les modeles disponibles.
-    genial_modele: str = ""
+    genial_modele: str = _reglage("MEETING_MODELE", "")
 
     # La documentation GenIAL le dit : une reponse longue fait expirer la
     # requete si elle n'est pas diffusee en flux. Un compte rendu EST une
@@ -140,8 +182,11 @@ class Config:
     # ------------------------------------------------------------------ #
     # Serveur web
     # ------------------------------------------------------------------ #
-    host: str = "127.0.0.1"             # "0.0.0.0" pour ouvrir aux autres postes du reseau
-    port: int = 8000
+    # "0.0.0.0" pour ouvrir aux autres postes du reseau. Dans un conteneur
+    # c'est obligatoire : 127.0.0.1 n'y designe que le conteneur lui-meme, et
+    # rien ne repondrait de l'exterieur.
+    host: str = _reglage("MEETING_HOST", "127.0.0.1")
+    port: int = int(_reglage("MEETING_PORT", "8000"))
 
     # Nombre de transcriptions simultanees. 1 = les demandes s'enchainent :
     # sur CPU, lancer plusieurs transcriptions en parallele ralentit tout le
@@ -155,5 +200,4 @@ CONFIG = Config()
 def chemin_modele_whisper() -> str:
     """Dossier local ou telecharge_modele.py depose le modele Whisper.
     (dans models/, deja exclu de git par le .gitignore)"""
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        "models", f"whisper-{CONFIG.whisper_model}")
+    return os.path.join(DOSSIER, "models", f"whisper-{CONFIG.whisper_model}")
