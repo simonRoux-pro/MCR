@@ -71,7 +71,13 @@ fichier `.env` a la racine du projet, que git ignore :
 cp .env.exemple .env
 ```
 
-puis on y renseigne `GENIAL_TOKEN=...`. L'application lit ce fichier au
+puis on y renseigne `GENIAL_TOKEN=...`.
+
+**Le fichier `.env` n'est pas un script shell.** Docker Compose le lit avec un
+parseur strict : ni apostrophe ni guillemet, meme dans un commentaire, sinon il
+refuse de demarrer avec un message du genre `unexpected character in variable
+name`. Une ligne = `CLE=valeur`, sans espace autour du `=`, sans `export`
+devant. L'application lit ce fichier au
 demarrage, **avec ou sans conteneur** — plus besoin de refaire
 `export GENIAL_TOKEN=...` a chaque terminal.
 
