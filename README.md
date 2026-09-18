@@ -93,6 +93,7 @@ Le meme fichier accepte quelques reglages de deploiement, qui surchargent
 | `MEETING_MODE` | `mode` (`auto` / `direct` / `differe`) |
 | `MEETING_MODELE` | `genial_modele` |
 | `MEETING_HOST` / `MEETING_PORT` | adresse et port d'ecoute |
+| `MEETING_CLE_API` | cle exigee sur la route d'integration (voir section 10) |
 
 ## 4. Lancer le serveur
 
@@ -443,7 +444,23 @@ Le compte rendu, lui, ne coute qu'un appel supplementaire par reunion.
 
 ---
 
-## 10. Ce que l'outil ne fait pas
+## 10. Integrer l'outil dans une autre application
+
+L'outil s'ouvre avec une reference fournie par l'application appelante, qui
+relit ensuite le resultat avec cette meme reference :
+
+```
+https://<outil>/?ref=DOSSIER-2026-0412          <- l'appelant ouvre
+GET /api/reunions/DOSSIER-2026-0412             <- l'appelant relit
+```
+
+Rien a installer cote appelant : un lien et un appel HTTP. Le contrat complet,
+la cle d'API et les specificites Appian sont dans
+**[docs/INTEGRATION.md](docs/INTEGRATION.md)**.
+
+---
+
+## 11. Ce que l'outil ne fait pas
 
 - **Distinguer les voix a l'interieur d'une meme source.** L'etiquetage
   s'appuie sur la separation micro / son de l'ordinateur : deux etiquettes, pas
@@ -455,7 +472,7 @@ Le compte rendu, lui, ne coute qu'un appel supplementaire par reunion.
 
 ---
 
-## 11. Confidentialite
+## 12. Confidentialite
 
 - **Avec `moteur = "local"`** (defaut) : la transcription tourne sur la machine
   qui heberge le serveur. Aucun service externe, aucune cle d'API, aucun envoi
@@ -474,7 +491,7 @@ Le compte rendu, lui, ne coute qu'un appel supplementaire par reunion.
 
 ---
 
-## 12. Depannage
+## 13. Depannage
 
 | Probleme | Cause probable | Solution |
 |---|---|---|

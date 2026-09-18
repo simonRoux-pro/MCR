@@ -14,6 +14,8 @@ transcription tourne en local, sans appel a un service externe.
 import netfix  # noqa: F401  -- contournements reseau, DOIT rester le premier import (voir netfix.py)
 
 import datetime
+import os
+import secrets
 import shutil
 import tempfile
 import threading
@@ -60,6 +62,11 @@ class Session:
     erreur: str = ""
     octets_recus: int = 0
     vocabulaire: str = ""             # noms propres / sigles de cette reunion
+
+    # Reference fournie par l'application appelante (Appian ou autre) dans
+    # l'URL : ?ref=DOSSIER-2026-0412. C'est par elle qu'elle viendra recuperer
+    # le resultat, sans avoir a connaitre l'identifiant interne de la session.
+    reference: str = ""
 
     # Mode direct : les segments arrivent pendant la reunion et sont transcrits
     # au fil de l'eau. `en_attente` compte ceux dont on attend encore le texte,
@@ -158,14 +165,16 @@ async def creer_session(requete: Request):
     except Exception:
         donnees = {}                   # aucun corps envoye : valeurs par defaut
     vocabulaire = str((donnees or {}).get("vocabulaire", "") or "")[:1000]
+    reference = str((donnees or {}).get("reference", "") or "")[:200]
 
     identifiant = uuid.uuid4().hex
     dossier = Path(tempfile.mkdtemp(prefix=f"reunion-{identifiant[:8]}-"))
     session = Session(identifiant=identifiant, dossier=dossier,
-                      vocabulaire=vocabulaire)
+                      vocabulaire=vocabulaire, reference=reference)
     with verrou_sessions:
         sessions[identifiant] = session
-    print(f"[MeetingCT] Session {identifiant[:8]} ouverte ({dossier})", flush=True)
+    print(f"[MeetingCT] Session {identifiant[:8]} ouverte"
+          f"{' pour ' + reference if reference else ''} ({dossier})", flush=True)
     return session.en_json()
 
 
@@ -394,6 +403,61 @@ def telecharger(identifiant: str):
     return FileResponse(session.dossier / "transcription.txt",
                         media_type="text/plain; charset=utf-8",
                         filename=session.nom_de_fichier("transcription", "txt"))
+
+
+def _verifier_cle(requete: Request) -> None:
+    """Protege les routes d'integration par une cle partagee.
+
+    Sans cle configuree, la route reste ouverte : c'est ce qui permet de
+    travailler en local sans ceremonie. Des que le serveur ecoute ailleurs que
+    sur cette machine, en configurer une (MEETING_CLE_API) — une transcription
+    de reunion n'a pas a etre lisible par qui devine une reference."""
+    attendue = os.environ.get("MEETING_CLE_API", "").strip()
+    if not attendue:
+        return
+    fournie = requete.headers.get("x-cle-api", "")
+    # compare_digest : comparaison a duree constante, pour qu'on ne puisse pas
+    # deviner la cle caractere par caractere en mesurant le temps de reponse.
+    if not secrets.compare_digest(fournie, attendue):
+        raise HTTPException(status_code=401,
+                            detail="Cle d'API absente ou invalide.")
+
+
+def _derniere_par_reference(reference: str):
+    """La session la plus recente portant cette reference, ou None.
+
+    La plus recente et non la premiere : une reunion peut etre reenregistree
+    apres un faux depart, c'est le dernier essai qui fait foi."""
+    with verrou_sessions:
+        candidates = [s for s in sessions.values() if s.reference == reference]
+    return max(candidates, key=lambda s: s.debut) if candidates else None
+
+
+@app.get("/api/reunions/{reference}")
+def reunion_par_reference(reference: str, requete: Request):
+    """Resultat d'une reunion, retrouve par la reference de l'appelant.
+
+    C'est LE point d'entree d'integration : une application tierce ouvre
+    l'outil avec ?ref=<sa reference>, puis vient lire ici. Elle n'a jamais
+    besoin de connaitre l'identifiant interne de la session.
+
+    Ce format est un contrat : il ne change pas sans preavis, contrairement a
+    /api/sessions/{id} qui sert la page et suit ses besoins."""
+    _verifier_cle(requete)
+    session = _derniere_par_reference(reference)
+    if session is None:
+        raise HTTPException(status_code=404,
+                            detail=f"Aucune reunion pour la reference {reference}.")
+    _finaliser_si_pret(session)
+    return {
+        "ref": session.reference,
+        "etat": session.etat,
+        "debut": session.debut.isoformat(timespec="seconds"),
+        "transcription": session.texte_assemble() or session.texte,
+        "compteRendu": session.compte_rendu,
+        "compteRenduEtat": session.cr_etat,
+        "erreur": session.erreur,
+    }
 
 
 @app.get("/api/info")

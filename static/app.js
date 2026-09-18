@@ -22,6 +22,12 @@ function lien(chemin) {
   return RACINE + chemin.replace(/^\//, "");
 }
 
+// Reference metier fournie par l'application appelante : ?ref=DOSSIER-2026-0412
+// C'est par elle qu'elle viendra rechercher le resultat. On la transmet au
+// serveur a l'ouverture de la session, et on la rappelle a l'ecran pour que
+// l'utilisateur sache pour quel dossier il enregistre.
+const REFERENCE = new URLSearchParams(location.search).get("ref") || "";
+
 const DUREE_MORCEAU = 5000;   // archive : un morceau toutes les 5 s
 const INTERVALLE_SUIVI = 1000;
 const SEUIL_SILENCE = 0.01;   // en dessous : considere comme du silence
@@ -64,6 +70,8 @@ const el = {
   demarrer: document.getElementById("demarrer"),
   arreter: document.getElementById("arreter"),
   rappel: document.getElementById("rappel"),
+  reference: document.getElementById("reference"),
+  valeurReference: document.getElementById("valeurReference"),
   vocabulaire: document.getElementById("vocabulaire"),
   mode: document.getElementById("mode"),
   avertissementMode: document.getElementById("avertissementMode"),
@@ -398,7 +406,10 @@ async function demarrer() {
     const session = await api("/api/sessions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ vocabulaire: el.vocabulaire.value }),
+      body: JSON.stringify({
+        vocabulaire: el.vocabulaire.value,
+        reference: REFERENCE,
+      }),
     });
     sessionId = session.id;
     // Le mode est celui choisi dans la page au moment de demarrer : c'est le
@@ -504,8 +515,25 @@ async function arreter() {
   }
 }
 
+/** Previent la page qui nous heberge, quand l'outil tourne dans une iframe.
+ *  Sans effet en navigation normale : il n'y a alors pas d'autre fenetre. */
+function annoncerAuParent(evenement, session) {
+  if (window.parent === window) return;
+  try {
+    window.parent.postMessage({
+      source: "meeting-ct",
+      evenement,                       // "transcription" | "compteRendu"
+      ref: REFERENCE,
+      etat: session.etat,
+      transcription: session.texte || "",
+      compteRendu: session.compteRendu || "",
+    }, "*");
+  } catch (e) { /* parent d'une autre origine et trop restrictif : tant pis */ }
+}
+
 function terminee(session) {
   el.texte.value = session.texte;
+  annoncerAuParent("transcription", session);
   if (crDisponible) el.redigerCr.disabled = !session.texte;
   jauge(100);
   etat("Transcription terminee.", "succes");
@@ -579,6 +607,7 @@ function suivreCr() {
     if (session.crEtat === "pret") {
       clearInterval(suiviCr);
       el.texteCr.value = session.compteRendu;
+      annoncerAuParent("compteRendu", session);
       etatCr("Compte rendu redige.", "succes");
       el.copierCr.disabled = false;
       el.telechargerCr.disabled = false;
@@ -641,6 +670,11 @@ el.effacer.addEventListener("click", async () => {
   [el.copier, el.telecharger, el.audio, el.effacer].forEach((b) => (b.disabled = true));
   etat("Donnees effacees du serveur.", "succes");
 });
+
+if (REFERENCE) {
+  el.valeurReference.textContent = REFERENCE;
+  el.reference.hidden = false;
+}
 
 // Le vocabulaire est retenu d'une reunion a l'autre, dans le navigateur
 // uniquement (localStorage) : ce sont souvent les memes noms chaque semaine.

@@ -79,6 +79,14 @@ h2 { font-size: 1.1rem; margin: 0; }
   font-size: .85rem;
 }
 
+.reference {
+  margin: 0 0 1rem;
+  padding: .55rem .8rem;
+  border-left: 3px solid var(--accent);
+  background: var(--carte);
+  font-size: .9rem;
+}
+
 .rappel { margin: 0; font-size: .9rem; }
 .rappel .discret { color: var(--discret); }
 
