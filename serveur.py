@@ -490,9 +490,34 @@ def erreur_lisible(requete, exc):
 app.mount("/static", StaticFiles(directory=STATIQUE), name="static")
 
 
+def options_tls() -> dict:
+    """Les arguments TLS a passer a uvicorn, vides si on sert en HTTP.
+
+    Refuse un certificat a moitie configure plutot que de demarrer en clair
+    sans le dire : on croirait servir en HTTPS, et le micro serait refuse sans
+    qu'on comprenne pourquoi."""
+    cert, cle = CONFIG.ssl_cert.strip(), CONFIG.ssl_key.strip()
+    if not cert and not cle:
+        return {}
+    if not cert or not cle:
+        raise SystemExit("MEETING_SSL_CERT et MEETING_SSL_KEY vont par paire : "
+                         "indiquer les deux, ou aucun des deux.")
+    for chemin in (cert, cle):
+        if not os.path.isfile(chemin):
+            raise SystemExit(f"Fichier de certificat introuvable : {chemin}")
+    return {"ssl_certfile": cert, "ssl_keyfile": cle}
+
+
 if __name__ == "__main__":
-    print(f"Serveur de transcription : http://{CONFIG.host}:{CONFIG.port}")
+    tls = options_tls()
+    protocole = "https" if tls else "http"
+    print(f"Serveur de transcription : {protocole}://{CONFIG.host}:{CONFIG.port}")
     if CONFIG.host == "127.0.0.1":
         print("(accessible depuis ce poste uniquement ; mettre host = \"0.0.0.0\" "
               "dans config.py pour l'ouvrir aux autres postes du reseau)")
-    uvicorn.run(app, host=CONFIG.host, port=CONFIG.port)
+    elif not tls:
+        # Sans HTTPS, le navigateur refuse le micro partout sauf sur localhost.
+        # Autant le dire au demarrage plutot que de laisser chercher.
+        print("ATTENTION : sans HTTPS, le navigateur refusera le micro aux "
+              "postes distants. Voir MEETING_SSL_CERT dans .env.exemple.")
+    uvicorn.run(app, host=CONFIG.host, port=CONFIG.port, **tls)

@@ -30,3 +30,6 @@ config_local.py
 
 # Tests
 .pytest_cache/
+
+# Certificats TLS : une cle privee ne se versionne jamais.
+*.pem

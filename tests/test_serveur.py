@@ -401,3 +401,44 @@ def test_la_page_sait_si_le_compte_rendu_est_possible(client):
     masque alors la section plutot que d'offrir un bouton qui echouera."""
     infos = client.get("/api/info").json()
     assert infos["compteRenduDisponible"] is (serveur.CONFIG.moteur == "genial")
+
+
+# --------------------------------------------------------------------------- #
+# HTTPS
+#
+# Sans certificat, le navigateur refuse le micro partout sauf sur localhost :
+# une erreur de reglage ici rend l'outil inutilisable en deploiement, et le
+# symptome (micro refuse) ne designe pas sa cause.
+# --------------------------------------------------------------------------- #
+
+def test_sans_certificat_on_sert_en_clair():
+    with patch.object(serveur.CONFIG, "ssl_cert", ""), \
+         patch.object(serveur.CONFIG, "ssl_key", ""):
+        assert serveur.options_tls() == {}
+
+
+def test_un_certificat_a_moitie_configure_arrete_le_serveur():
+    """Demarrer en clair alors qu'on croit servir en HTTPS est pire que ne pas
+    demarrer : on chercherait la panne du cote du micro."""
+    with patch.object(serveur.CONFIG, "ssl_cert", "certificat.pem"), \
+         patch.object(serveur.CONFIG, "ssl_key", ""):
+        with pytest.raises(SystemExit):
+            serveur.options_tls()
+
+
+def test_un_certificat_introuvable_arrete_le_serveur(tmp_path):
+    with patch.object(serveur.CONFIG, "ssl_cert", str(tmp_path / "absent.pem")), \
+         patch.object(serveur.CONFIG, "ssl_key", str(tmp_path / "absent-cle.pem")):
+        with pytest.raises(SystemExit):
+            serveur.options_tls()
+
+
+def test_un_certificat_complet_est_passe_a_uvicorn(tmp_path):
+    cert = tmp_path / "certificat.pem"
+    cle = tmp_path / "cle.pem"
+    cert.write_text("cert", encoding="utf-8")
+    cle.write_text("cle", encoding="utf-8")
+    with patch.object(serveur.CONFIG, "ssl_cert", str(cert)), \
+         patch.object(serveur.CONFIG, "ssl_key", str(cle)):
+        assert serveur.options_tls() == {"ssl_certfile": str(cert),
+                                         "ssl_keyfile": str(cle)}

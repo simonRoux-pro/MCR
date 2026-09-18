@@ -94,6 +94,7 @@ Le meme fichier accepte quelques reglages de deploiement, qui surchargent
 | `MEETING_MODELE` | `genial_modele` |
 | `MEETING_HOST` / `MEETING_PORT` | adresse et port d'ecoute |
 | `MEETING_CLE_API` | cle exigee sur la route d'integration (voir section 10) |
+| `MEETING_SSL_CERT` / `MEETING_SSL_KEY` | certificat TLS, pour servir en HTTPS |
 
 ## 4. Lancer le serveur
 
@@ -217,8 +218,40 @@ Les autres postes ouvrent alors `http://<ip-du-serveur>:8000`.
   `127.0.0.1`.
 - **Micro et navigateur** : hors `localhost`, les navigateurs n'autorisent le
   micro que sur des pages **HTTPS**. En HTTP simple, seul le poste serveur
-  pourra enregistrer. Pour un usage en equipe, il faut donc placer le serveur
-  derriere un reverse proxy avec un certificat (nginx, Caddy...).
+  pourra enregistrer — et le symptome (micro refuse) ne designe pas sa cause.
+  Il faut donc un certificat.
+
+### Servir en HTTPS
+
+Le serveur sait le faire lui-meme, sans reverse proxy. Deux lignes dans
+`.env` :
+
+```
+MEETING_SSL_CERT=certificat.pem
+MEETING_SSL_KEY=cle.pem
+```
+
+Pour obtenir un certificat de test :
+
+```bash
+python genere_certificat.py              # pour localhost
+python genere_certificat.py 10.20.30.40  # pour une adresse reseau
+python genere_certificat.py outil.interne
+```
+
+(ce script demande `pip install cryptography` ; il n'est pas necessaire au
+serveur lui-meme, seulement pour fabriquer le certificat)
+
+Ce certificat est **auto-signe** : le navigateur affichera un avertissement, a
+accepter une fois par poste. C'est bon pour une demonstration, pas pour un
+deploiement. Pour un vrai deploiement, demander un certificat a l'autorite
+interne de l'organisation, ou placer le serveur derriere un reverse proxy qui
+en porte un (nginx, Caddy...) — dans ce dernier cas, laisser
+`MEETING_SSL_CERT` vide, c'est le proxy qui fait le TLS.
+
+Les fichiers `.pem` sont exclus du depot et de l'image Docker : une cle privee
+ne se versionne pas et ne se partage pas. Dans un conteneur, monter le
+certificat en volume.
 
 ---
 

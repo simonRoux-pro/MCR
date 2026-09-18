@@ -188,6 +188,18 @@ class Config:
     host: str = _reglage("MEETING_HOST", "127.0.0.1")
     port: int = int(_reglage("MEETING_PORT", "8000"))
 
+    # Certificat TLS, pour servir en HTTPS. Chemins vers le certificat et sa
+    # cle privee ; laisser vide pour servir en HTTP simple.
+    #
+    # Ce n'est PAS un raffinement : les navigateurs n'autorisent l'acces au
+    # micro et a la capture d'ecran que dans un "contexte securise", c'est a
+    # dire en HTTPS. La seule exception est localhost, ce qui permet de
+    # travailler sur son poste sans certificat. Des que le serveur est joint
+    # par son adresse reseau, sans HTTPS le micro est refuse et l'outil ne
+    # sert plus a rien.
+    ssl_cert: str = _reglage("MEETING_SSL_CERT", "")
+    ssl_key: str = _reglage("MEETING_SSL_KEY", "")
+
     # Nombre de transcriptions simultanees. 1 = les demandes s'enchainent :
     # sur CPU, lancer plusieurs transcriptions en parallele ralentit tout le
     # monde (et le modele Whisper n'est pas prevu pour un usage concurrent).

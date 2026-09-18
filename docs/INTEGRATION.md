@@ -90,10 +90,39 @@ Sans effet en navigation normale.
 
 ---
 
+## HTTPS : prealable, pas option
+
+Les navigateurs n'autorisent l'acces au micro et a la capture d'ecran que dans
+un **contexte securise**, c'est a dire en HTTPS. `localhost` est la seule
+exception, ce qui permet de travailler sur son poste sans certificat.
+
+Consequence : **des que l'outil est joint par son adresse reseau, il lui faut
+un certificat**, sinon le micro est refuse et l'outil ne sert a rien. Ce n'est
+pas une exigence de l'application appelante, c'est une regle du navigateur.
+
+```
+MEETING_SSL_CERT=/chemin/certificat.pem
+MEETING_SSL_KEY=/chemin/cle.pem
+```
+
+Pour une demonstration, `python genere_certificat.py <nom-ou-ip>` fabrique un
+certificat auto-signe. Il affiche un avertissement a accepter une fois par
+poste — et **une iframe pointant sur un certificat auto-signe reste vide sans
+message**, car on ne peut pas accepter l'avertissement depuis une iframe. Il
+faut donc ouvrir l'adresse une fois dans un onglet, accepter, puis revenir.
+
+Pour un vrai deploiement, demander un certificat a l'autorite interne de
+l'organisation : meme reglage, plus aucun avertissement.
+
+---
+
 ## Cote Appian
 
-**Afficher l'outil.** Un lien, ou un `a!webContentField` pointant sur l'URL
-avec la reference :
+### Afficher l'outil
+
+`a!webContentField` **refuse une source en HTTP** — la validation echoue des la
+conception, avec « La source doit etre securisee (HTTPS) ». L'outil doit donc
+servir en HTTPS (voir ci-dessus).
 
 ```
 a!webContentField(
@@ -102,21 +131,41 @@ a!webContentField(
 )
 ```
 
-**Point a verifier avant de choisir l'iframe** : la capture du micro et du son
-de l'ordinateur n'y fonctionne que si Appian delegue les permissions
-correspondantes (`allow="microphone; display-capture"` sur son iframe). La
-question a poser a l'administrateur de la plateforme :
+**Second point a verifier** : la capture du micro et du son ne fonctionne dans
+une iframe que si la page hote delegue les permissions correspondantes
+(`allow="microphone; display-capture"`). C'est Appian qui genere la balise, on
+ne peut pas le forcer depuis l'interface. La question a poser a
+l'administrateur de la plateforme :
 
-> *Les iframes des interfaces Appian portent-elles `microphone` et
+> *Les iframes des `a!webContentField` portent-elles `microphone` et
 > `display-capture` dans leur Permissions Policy, et est-ce configurable ?*
 
-Si la reponse est non, on ouvre l'outil dans un onglet plutot qu'en iframe :
-tout le reste de l'integration est identique.
+### Si l'iframe ne convient pas
 
-**Recuperer le resultat.** Un objet *Integration* en GET sur
-`/api/reunions/{ref}`, avec la cle dans l'en-tete, appele depuis un bouton
-(« Recuperer le compte rendu ») ou depuis un noeud de processus. Le JSON se
-mappe directement dans un enregistrement.
+On ouvre l'outil dans un onglet. **Le reste de l'integration ne change pas
+d'une ligne** : l'iframe est un confort d'ergonomie, pas une dependance.
+
+```
+a!linkField(
+  links: a!safeLink(
+    label: "Enregistrer la reunion",
+    uri: "https://<outil>/?ref=" & ri!numeroDossier
+  )
+)
+```
+
+### Recuperer le resultat
+
+Un objet *Integration* en GET sur `/api/reunions/{ref}`, la cle d'API portee
+par un *Connected System* (jamais en dur dans l'objet), appele depuis un bouton
+« Recuperer le compte rendu » ou depuis un noeud de processus.
+
+Cet appel part du **serveur** Appian, pas du navigateur : l'outil doit lui etre
+joignable. Un outil qui tourne sur le poste de l'utilisateur ne l'est pas.
+
+Prevoir le cas ou `etat` ne vaut pas encore `termine` : afficher
+« transcription en cours » et laisser reinterroger, plutot qu'un appel
+automatique qui tomberait trop tot.
 
 **Rien a installer cote Appian** : pas de plugin, pas de composant a deployer.
 Un lien et un objet Integration, donc du parametrage reproductible d'un

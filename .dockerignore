@@ -4,6 +4,9 @@
 # surtout pas etre copie dans l'image — une image se partage, un secret non.
 .env
 config_local.py
+# Les certificats se montent en volume au demarrage, pour la meme raison :
+# une cle privee n'a rien a faire dans une image.
+*.pem
 
 # Lourd et inutile dans l'image
 .venv/
