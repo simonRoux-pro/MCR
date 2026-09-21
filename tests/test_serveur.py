@@ -1,6 +1,7 @@
 """Tests de l'API du serveur de transcription. La transcription elle-meme est
 simulee : ces tests verifient le parcours complet (session, envoi de morceaux
 au fil de l'eau, suivi, telechargement, effacement) sans modele Whisper."""
+import datetime
 from unittest.mock import patch
 
 import pytest
@@ -442,3 +443,103 @@ def test_un_certificat_complet_est_passe_a_uvicorn(tmp_path):
          patch.object(serveur.CONFIG, "ssl_key", str(cle)):
         assert serveur.options_tls() == {"ssl_certfile": str(cert),
                                          "ssl_keyfile": str(cle)}
+
+
+# --------------------------------------------------------------------------- #
+# Persistance
+#
+# Sans elle, un redemarrage du serveur perd les reunions qu'une application
+# tierce n'est pas encore venue chercher. C'est la difference entre un outil
+# qu'on lance sur son poste et un service qu'on deploie.
+# --------------------------------------------------------------------------- #
+
+@pytest.fixture
+def donnees(tmp_path):
+    """Un serveur configure pour conserver ses reunions sur le disque."""
+    with patch.object(serveur.CONFIG, "dossier_donnees", str(tmp_path)):
+        serveur.sessions.clear()
+        yield tmp_path
+        serveur.sessions.clear()
+
+
+def test_une_reunion_terminee_survit_a_un_redemarrage(donnees):
+    client = TestClient(serveur.app)
+    with _transcription_simulee("bonjour a tous"):
+        identifiant = client.post("/api/sessions",
+                                  json={"reference": "DOSSIER-1"}).json()["id"]
+        client.post(f"/api/sessions/{identifiant}/morceau", content=b"audio")
+        client.post(f"/api/sessions/{identifiant}/terminer")
+        serveur.executeur.shutdown(wait=True)
+        serveur.executeur = type(serveur.executeur)(max_workers=1)
+
+    # Le redemarrage : on jette tout ce qui etait en memoire, comme le ferait
+    # l'arret du processus, et on relit le disque.
+    serveur.sessions.clear()
+    assert serveur.charger_les_sessions() == 1
+
+    reponse = client.get("/api/reunions/DOSSIER-1")
+    assert reponse.status_code == 200
+    assert reponse.json()["transcription"] == "bonjour a tous"
+    assert reponse.json()["etat"] == "termine"
+
+
+def test_une_reunion_interrompue_le_dit_plutot_que_de_rester_en_cours(donnees):
+    """Un etat "transcription" fige apres un redemarrage n'avancerait plus
+    jamais : l'appelant attendrait indefiniment."""
+    client = TestClient(serveur.app)
+    identifiant = client.post("/api/sessions",
+                              json={"reference": "DOSSIER-2"}).json()["id"]
+
+    serveur.sessions.clear()
+    serveur.charger_les_sessions()
+
+    reponse = client.get("/api/reunions/DOSSIER-2").json()
+    assert reponse["etat"] == "echec"
+    assert "redemarrage" in reponse["erreur"]
+
+
+def test_sans_dossier_de_donnees_rien_n_est_ecrit(tmp_path):
+    """Le comportement par defaut ne change pas : sur un poste, la reunion ne
+    doit pas laisser de trace ailleurs que dans le temporaire."""
+    with patch.object(serveur.CONFIG, "dossier_donnees", ""):
+        serveur.sessions.clear()
+        client = TestClient(serveur.app)
+        client.post("/api/sessions", json={"reference": "DOSSIER-3"})
+        assert list(tmp_path.iterdir()) == []
+        assert serveur.charger_les_sessions() == 0
+
+
+def test_les_reunions_trop_vieilles_sont_effacees(donnees):
+    client = TestClient(serveur.app)
+    identifiant = client.post("/api/sessions", json={"reference": "VIEUX"}).json()["id"]
+    session = serveur.sessions[identifiant]
+    session.debut -= datetime.timedelta(days=30)
+    session.enregistrer()
+
+    with patch.object(serveur.CONFIG, "retention_jours", 7):
+        assert serveur.purger_les_anciennes() == 1
+    assert identifiant not in serveur.sessions
+    assert not session.dossier.exists()
+
+
+def test_une_retention_nulle_ne_supprime_rien(donnees):
+    client = TestClient(serveur.app)
+    identifiant = client.post("/api/sessions", json={"reference": "GARDE"}).json()["id"]
+    serveur.sessions[identifiant].debut -= datetime.timedelta(days=3650)
+
+    with patch.object(serveur.CONFIG, "retention_jours", 0):
+        assert serveur.purger_les_anciennes() == 0
+    assert identifiant in serveur.sessions
+
+
+def test_un_fichier_illisible_n_empeche_pas_le_demarrage(donnees):
+    """Perdre une reunion est acceptable ; ne pas demarrer ne l'est pas."""
+    client = TestClient(serveur.app)
+    client.post("/api/sessions", json={"reference": "BONNE"})
+    abime = donnees / "abimee"
+    abime.mkdir()
+    (abime / serveur.FICHIER_ETAT).write_text("{ ceci n'est pas du JSON",
+                                              encoding="utf-8")
+
+    serveur.sessions.clear()
+    assert serveur.charger_les_sessions() == 1

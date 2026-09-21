@@ -188,6 +188,26 @@ class Config:
     host: str = _reglage("MEETING_HOST", "127.0.0.1")
     port: int = int(_reglage("MEETING_PORT", "8000"))
 
+    # Ou conserver les enregistrements et leurs resultats.
+    #
+    # Vide (defaut) : dossier temporaire du systeme, et les sessions ne vivent
+    # qu'en memoire. Parfait sur son poste — rien ne s'accumule, rien ne
+    # survit a une reunion. Mais tout redemarrage efface tout.
+    #
+    # Renseigne : chaque session est ecrite sur le disque et relue au
+    # demarrage. Indispensable des qu'une application tierce vient chercher
+    # le resultat plus tard : un redemarrage ne doit pas lui faire perdre
+    # une reunion.
+    dossier_donnees: str = _reglage("MEETING_DONNEES", "")
+
+    # Duree de conservation, en jours. Au-dela, la reunion est effacee —
+    # audio, transcription et compte rendu. 0 desactive l'effacement.
+    #
+    # Une transcription de reunion est une donnee sensible : elle ne doit pas
+    # s'accumuler indefiniment sur un serveur parce que personne n'a pense a
+    # faire le menage.
+    retention_jours: int = int(_reglage("MEETING_RETENTION_JOURS", "7"))
+
     # Certificat TLS, pour servir en HTTPS. Chemins vers le certificat et sa
     # cle privee ; laisser vide pour servir en HTTP simple.
     #

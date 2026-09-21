@@ -95,6 +95,8 @@ Le meme fichier accepte quelques reglages de deploiement, qui surchargent
 | `MEETING_HOST` / `MEETING_PORT` | adresse et port d'ecoute |
 | `MEETING_CLE_API` | cle exigee sur la route d'integration (voir section 10) |
 | `MEETING_SSL_CERT` / `MEETING_SSL_KEY` | certificat TLS, pour servir en HTTPS |
+| `MEETING_DONNEES` | dossier ou conserver les reunions (vide = temporaire) |
+| `MEETING_RETENTION_JOURS` | effacement automatique au bout de N jours (defaut 7) |
 
 ## 4. Lancer le serveur
 
@@ -252,6 +254,29 @@ en porte un (nginx, Caddy...) — dans ce dernier cas, laisser
 Les fichiers `.pem` sont exclus du depot et de l'image Docker : une cle privee
 ne se versionne pas et ne se partage pas. Dans un conteneur, monter le
 certificat en volume.
+
+### Conserver les reunions entre deux redemarrages
+
+Par defaut, les sessions vivent en memoire et les fichiers dans le temporaire
+du systeme : **tout disparait au redemarrage**. C'est le bon comportement sur
+un poste — rien ne s'accumule.
+
+Sur un serveur interroge par une autre application, ce ne l'est plus : un
+redemarrage lui ferait perdre un compte rendu qu'elle n'a pas encore recupere.
+
+```
+MEETING_DONNEES=/donnees
+MEETING_RETENTION_JOURS=7
+```
+
+Les reunions sont alors ecrites sur le disque et relues au demarrage. Celles
+qui etaient en cours au moment de l'arret passent en echec avec le motif,
+plutot que de rester bloquees dans un etat qui n'avancerait plus. Au-dela de
+`MEETING_RETENTION_JOURS`, tout est efface : audio, transcription et compte
+rendu.
+
+Le deploiement complet sur un serveur est decrit dans
+[docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md).
 
 ---
 

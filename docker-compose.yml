@@ -27,15 +27,31 @@ services:
     # Reglages de deploiement, surchargeables sans toucher a config.py.
     environment:
       MEETING_HOST: "0.0.0.0"
+      # Les reunions sont conservees ici, donc dans le volume ci-dessous.
+      # Sans ca, un redemarrage du conteneur perdrait les comptes rendus
+      # qu'une application tierce n'est pas encore venue chercher.
+      MEETING_DONNEES: "/donnees"
       # MEETING_MOTEUR: "genial"
       # MEETING_MODELE: "<nom du modele de redaction>"
       # MEETING_MODE: "differe"
+      # HTTPS : sans certificat, le navigateur refuse le micro aux postes
+      # distants. Decommenter apres avoir place les fichiers dans ./certificats
+      # MEETING_SSL_CERT: "/certificats/certificat.pem"
+      # MEETING_SSL_KEY: "/certificats/cle.pem"
 
     # Redemarre tout seul apres un plantage ou un redemarrage de la machine,
-    # mais reste arrete si on l'a arrete a la main.
+    # mais reste arrete si on l'a arrete a la main. C'est ce qui fait qu'un
+    # serveur n'a pas besoin qu'on le relance a la main.
     restart: unless-stopped
 
-    # L'audio et les transcriptions vivent dans un dossier temporaire du
-    # conteneur, et disparaissent donc a chaque redemarrage. C'est voulu : rien
-    # ne s'accumule, rien ne survit a une reunion. Pour les conserver, monter un
-    # volume sur /tmp — et assumer qu'il faudra alors les effacer soi-meme.
+    volumes:
+      # Les reunions survivent aux redemarrages et aux reconstructions de
+      # l'image. Elles sont effacees d'elles-memes au bout de
+      # MEETING_RETENTION_JOURS (7 par defaut).
+      - meeting-donnees:/donnees
+      # Le certificat est monte, jamais copie dans l'image : une cle privee ne
+      # se partage pas. Lecture seule, le serveur n'a pas a y ecrire.
+      - ./certificats:/certificats:ro
+
+volumes:
+  meeting-donnees:

@@ -1,0 +1,2 @@
+Placer ici certificat.pem et cle.pem pour servir en HTTPS depuis Docker.
+Les .pem sont exclus du depot : ils ne doivent jamais y entrer.

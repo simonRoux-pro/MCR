@@ -14,11 +14,13 @@ transcription tourne en local, sans appel a un service externe.
 import netfix  # noqa: F401  -- contournements reseau, DOIT rester le premier import (voir netfix.py)
 
 import datetime
+import json
 import os
 import secrets
 import shutil
 import tempfile
 import threading
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -38,6 +40,25 @@ STATIQUE = DOSSIER / "static"
 # Une seule transcription a la fois par defaut : sur CPU, les lancer en
 # parallele ralentit tout le monde (voir CONFIG.transcriptions_simultanees).
 executeur = ThreadPoolExecutor(max_workers=CONFIG.transcriptions_simultanees)
+
+
+# Nom du fichier qui conserve l'etat d'une session a cote de son audio.
+FICHIER_ETAT = "session.json"
+
+# Etats qui supposent un navigateur en train d'alimenter la session, ou une
+# transcription en cours dans ce processus : aucun ne survit a un redemarrage.
+ETATS_EN_COURS = {"enregistrement", "attente", "transcription", "finalisation"}
+
+
+def _racine_sessions() -> Path | None:
+    """Le dossier ou conserver les reunions, ou None si on travaille en
+    temporaire (voir CONFIG.dossier_donnees)."""
+    chemin = CONFIG.dossier_donnees.strip()
+    if not chemin:
+        return None
+    racine = Path(chemin)
+    racine.mkdir(parents=True, exist_ok=True)
+    return racine
 
 
 @dataclass
@@ -114,6 +135,89 @@ class Session:
         return "\n\n".join(f"{noms.get(source, source)} : {texte}"
                             for source, texte in blocs)
 
+    # ----------------------------------------------------------------- #
+    # Persistance
+    #
+    # Sans elle, un redemarrage du serveur perd toutes les reunions, y
+    # compris celles qu'une application tierce n'est pas encore venue
+    # chercher. Un fichier JSON par session suffit : il n'y a jamais assez de
+    # reunions pour justifier une base de donnees.
+    # ----------------------------------------------------------------- #
+    def etat_a_conserver(self) -> dict:
+        return {
+            "identifiant": self.identifiant,
+            "etat": self.etat,
+            "progression": self.progression,
+            "texte": self.texte,
+            "erreur": self.erreur,
+            "octets_recus": self.octets_recus,
+            "vocabulaire": self.vocabulaire,
+            "reference": self.reference,
+            "lignes": [{"debut": l.debut, "source": l.source, "texte": l.texte}
+                       for l in self.lignes],
+            "segments_recus": self.segments_recus,
+            "compte_rendu": self.compte_rendu,
+            "cr_etat": self.cr_etat,
+            "cr_erreur": self.cr_erreur,
+            "debut": self.debut.isoformat(),
+        }
+
+    def enregistrer(self) -> None:
+        """Ecrit l'etat de la session a cote de son audio.
+
+        Silencieux en cas d'echec : ne pas pouvoir ecrire ce fichier ne doit
+        jamais interrompre une reunion en cours. Le pire qu'on risque est de
+        reperdre cette session au prochain redemarrage, ce qui est l'ancien
+        comportement."""
+        if _racine_sessions() is None:
+            return
+        try:
+            # Ecriture puis remplacement : si le serveur s'arrete au milieu,
+            # on garde l'ancien fichier entier plutot qu'un JSON tronque.
+            provisoire = self.dossier / (FICHIER_ETAT + ".tmp")
+            provisoire.write_text(
+                json.dumps(self.etat_a_conserver(), ensure_ascii=False, indent=1),
+                encoding="utf-8")
+            provisoire.replace(self.dossier / FICHIER_ETAT)
+        except OSError as e:
+            print(f"[MeetingCT] Etat de la session {self.identifiant[:8]} "
+                  f"non enregistre : {e}", flush=True)
+
+    @classmethod
+    def depuis_le_disque(cls, dossier: Path) -> "Session":
+        donnees = json.loads((dossier / FICHIER_ETAT).read_text(encoding="utf-8"))
+        session = cls(
+            identifiant=donnees["identifiant"],
+            dossier=dossier,
+            etat=donnees["etat"],
+            progression=donnees.get("progression", -1),
+            texte=donnees.get("texte", ""),
+            erreur=donnees.get("erreur", ""),
+            octets_recus=donnees.get("octets_recus", 0),
+            vocabulaire=donnees.get("vocabulaire", ""),
+            reference=donnees.get("reference", ""),
+            segments_recus=donnees.get("segments_recus", 0),
+            compte_rendu=donnees.get("compte_rendu", ""),
+            cr_etat=donnees.get("cr_etat", "absent"),
+            cr_erreur=donnees.get("cr_erreur", ""),
+            debut=datetime.datetime.fromisoformat(donnees["debut"]),
+        )
+        session.lignes = [Ligne(**l) for l in donnees.get("lignes", [])]
+
+        # Une session qui n'etait pas terminee ne peut pas reprendre : le
+        # navigateur qui l'alimentait a perdu le fil, et les transcriptions
+        # en vol sont mortes avec le processus. Le dire franchement vaut
+        # mieux qu'un etat "transcription" qui n'avancerait plus jamais.
+        if session.etat in ETATS_EN_COURS:
+            session.etat = "echec"
+            session.erreur = ("Reunion interrompue par un redemarrage du "
+                              "serveur. L'enregistrement n'a pas pu etre "
+                              "transcrit.")
+        if session.cr_etat == "en_cours":
+            session.cr_etat = "echec"
+            session.cr_erreur = "Interrompu par un redemarrage du serveur."
+        return session
+
     def en_json(self) -> dict:
         return {
             "id": self.identifiant,
@@ -168,11 +272,18 @@ async def creer_session(requete: Request):
     reference = str((donnees or {}).get("reference", "") or "")[:200]
 
     identifiant = uuid.uuid4().hex
-    dossier = Path(tempfile.mkdtemp(prefix=f"reunion-{identifiant[:8]}-"))
+    racine = _racine_sessions()
+    if racine is None:
+        # Sans dossier de conservation, la reunion ne survit pas au processus.
+        dossier = Path(tempfile.mkdtemp(prefix=f"reunion-{identifiant[:8]}-"))
+    else:
+        dossier = racine / identifiant
+        dossier.mkdir(parents=True, exist_ok=True)
     session = Session(identifiant=identifiant, dossier=dossier,
                       vocabulaire=vocabulaire, reference=reference)
     with verrou_sessions:
         sessions[identifiant] = session
+    session.enregistrer()
     print(f"[MeetingCT] Session {identifiant[:8]} ouverte"
           f"{' pour ' + reference if reference else ''} ({dossier})", flush=True)
     return session.en_json()
@@ -269,6 +380,7 @@ def _finaliser_si_pret(session: Session) -> Session:
             session.erreur = session.erreur or (
                 "Aucun texte n'a pu etre obtenu. Verifie que le micro capte "
                 "bien du son (les barres de niveau bougent pendant l'enregistrement).")
+        session.enregistrer()
     return session
 
 
@@ -293,6 +405,7 @@ def _transcrire(session: Session):
         session.erreur = str(e)
         session.etat = "echec"
         print(f"[MeetingCT] Session {session.identifiant[:8]} : echec - {e}", flush=True)
+    session.enregistrer()
 
 
 @app.post("/api/sessions/{identifiant}/terminer")
@@ -312,6 +425,7 @@ def terminer(identifiant: str):
         session.etat = "echec"
         session.erreur = ("Aucun son n'a ete recu. Verifie que le micro est autorise "
                           "dans le navigateur et qu'il capte bien du son.")
+        session.enregistrer()
         return session.en_json()
 
     session.etat = "attente"   # devient "transcription" quand un creneau se libere
@@ -335,6 +449,7 @@ def _rediger(session: Session):
         session.cr_etat = "echec"
         print(f"[MeetingCT] Session {session.identifiant[:8]} : compte rendu "
               f"en echec - {e}", flush=True)
+    session.enregistrer()
 
 
 @app.post("/api/sessions/{identifiant}/compte-rendu")
@@ -487,6 +602,82 @@ def erreur_lisible(requete, exc):
     return JSONResponse(status_code=exc.status_code, content={"erreur": exc.detail})
 
 
+# --------------------------------------------------------------------------- #
+# Demarrage et entretien
+# --------------------------------------------------------------------------- #
+
+def charger_les_sessions() -> int:
+    """Relit les reunions laissees sur le disque par le processus precedent.
+
+    C'est ce qui rend les redemarrages inoffensifs : une application tierce
+    qui vient chercher un compte rendu le retrouve, meme si le serveur a
+    redemarre entre temps."""
+    racine = _racine_sessions()
+    if racine is None:
+        return 0
+    retrouvees = 0
+    for dossier in sorted(racine.iterdir()):
+        if not (dossier / FICHIER_ETAT).is_file():
+            continue          # dossier incomplet ou etranger : on l'ignore
+        try:
+            session = Session.depuis_le_disque(dossier)
+        except (OSError, ValueError, KeyError) as e:
+            # Un fichier illisible ne doit pas empecher le serveur de
+            # demarrer : on perd cette reunion, pas le service.
+            print(f"[MeetingCT] Session illisible dans {dossier.name} : {e}",
+                  flush=True)
+            continue
+        with verrou_sessions:
+            sessions[session.identifiant] = session
+        retrouvees += 1
+    return retrouvees
+
+
+def purger_les_anciennes() -> int:
+    """Efface les reunions plus vieilles que CONFIG.retention_jours.
+
+    Une transcription de reunion est une donnee sensible : elle ne doit pas
+    rester sur un serveur parce que personne n'a pense a faire le menage."""
+    if CONFIG.retention_jours <= 0:
+        return 0
+    limite = (datetime.datetime.now()
+              - datetime.timedelta(days=CONFIG.retention_jours))
+    effacees = 0
+    with verrou_sessions:
+        perimees = [s for s in sessions.values() if s.debut < limite]
+        for session in perimees:
+            sessions.pop(session.identifiant, None)
+    for session in perimees:
+        shutil.rmtree(session.dossier, ignore_errors=True)
+        effacees += 1
+    if effacees:
+        print(f"[MeetingCT] {effacees} reunion(s) effacee(s) apres "
+              f"{CONFIG.retention_jours} jours", flush=True)
+    return effacees
+
+
+def _entretien_periodique() -> None:
+    """Repasse la purge une fois par jour : un serveur qui tourne des semaines
+    ne peut pas compter sur son seul demarrage pour faire le menage."""
+    while True:
+        time.sleep(24 * 3600)
+        try:
+            purger_les_anciennes()
+        except Exception as e:                       # jamais fatal
+            print(f"[MeetingCT] Entretien : {e}", flush=True)
+
+
+def demarrer(bruyant: bool = True) -> None:
+    """Prepare le service : reprise des reunions conservees, puis menage."""
+    retrouvees = charger_les_sessions()
+    purger_les_anciennes()
+    if bruyant and _racine_sessions() is not None:
+        print(f"[MeetingCT] {retrouvees} reunion(s) reprise(s) depuis "
+              f"{CONFIG.dossier_donnees}", flush=True)
+    if _racine_sessions() is not None:
+        threading.Thread(target=_entretien_periodique, daemon=True).start()
+
+
 app.mount("/static", StaticFiles(directory=STATIQUE), name="static")
 
 
@@ -509,6 +700,7 @@ def options_tls() -> dict:
 
 
 if __name__ == "__main__":
+    demarrer()
     tls = options_tls()
     protocole = "https" if tls else "http"
     print(f"Serveur de transcription : {protocole}://{CONFIG.host}:{CONFIG.port}")
