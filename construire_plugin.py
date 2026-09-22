@@ -2,7 +2,7 @@
 
     python construire_plugin.py
 
-Produit dist/mcr-enregistreur-<version>.jar — un fichier ZIP, que l'on depose
+Produit dist/mcr-enregistreur-<version>.zip — un fichier ZIP, que l'on depose
 dans Appian (Administration > Plug-ins, ou le dossier des plug-ins du serveur).
 
 POURQUOI UN SCRIPT ET PAS DES FICHIERS COPIES A LA MAIN.
@@ -30,6 +30,11 @@ SORTIE = DOSSIER / "dist"
 
 MANIFESTE = "appian-component-plugin.xml"
 
+# Les seuls types de fichiers qu'Appian accepte dans le contenu web d'un
+# composant. Un fichier d'un autre type fait echouer le deploiement.
+EXTENSIONS_WEB = {".html", ".htm", ".css", ".less", ".js", ".woff", ".woff2",
+                  ".png", ".gif", ".jpg", ".jpeg", ".svg", ".ico", ".map"}
+
 
 def version_du_manifeste(texte: str) -> str:
     """La version declaree dans le manifeste, pour nommer le fichier produit.
@@ -52,6 +57,7 @@ def dossier_du_composant(texte: str) -> Path:
 
 
 def construire() -> Path:
+    ecartes: list[str] = []
     manifeste = (SOURCE_PLUGIN / MANIFESTE).read_text(encoding="utf-8")
     version = version_du_manifeste(manifeste)
     composant = dossier_du_composant(manifeste)
@@ -68,29 +74,41 @@ def construire() -> Path:
         shutil.copy(SOURCE_PAGE / fichier, cible_statique / fichier)
 
     SORTIE.mkdir(exist_ok=True)
-    archive = SORTIE / f"mcr-enregistreur-{version}.jar"
+    # Un composant se livre en .zip, pas en .jar : le .jar est la forme des
+    # plug-ins qui embarquent du code Java (fonctions, services intelligents).
+    # Un composant n'est que du contenu web, et Appian attend une archive dont
+    # la racine porte le manifeste et les dossiers de composants.
+    archive = SORTIE / f"mcr-enregistreur-{version}.zip"
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zip_:
-        # Un JAR porte toujours ce fichier, en premiere position. Le notre ne
-        # contient aucune classe Java, mais un outil qui refuserait une archive
-        # sans manifeste nous rejetterait sans expliquer pourquoi.
-        zip_.writestr("META-INF/MANIFEST.MF",
-                      "Manifest-Version: 1.0\r\n"
-                      f"Implementation-Title: Enregistreur de reunion\r\n"
-                      f"Implementation-Version: {version}\r\n"
-                      "\r\n")
         for chemin in sorted(SOURCE_PLUGIN.rglob("*")):
-            if chemin.is_file():
-                zip_.write(chemin, chemin.relative_to(SOURCE_PLUGIN).as_posix())
+            if not chemin.is_file():
+                continue
+            interne = chemin.relative_to(SOURCE_PLUGIN).as_posix()
+            # Appian n'accepte que certains types de fichiers dans le contenu
+            # web. Tout le reste — documentation, notes — doit rester hors de
+            # l'archive, sous peine de refus sans explication.
+            if interne != MANIFESTE and chemin.suffix.lower() not in EXTENSIONS_WEB:
+                ecartes.append(interne)
+                continue
+            zip_.write(chemin, interne)
 
-    return archive
+    return archive, ecartes
 
 
 if __name__ == "__main__":
-    archive = construire()
+    archive, ecartes = construire()
     taille = archive.stat().st_size
     print(f"Plugin construit : {archive.relative_to(DOSSIER)} ({taille // 1024} Ko)")
     with zipfile.ZipFile(archive) as zip_:
         for nom in sorted(zip_.namelist()):
+            print("   ", nom)
+    if ecartes:
+        # Dit a voix haute ce qui n'est pas entre : un fichier manquant a
+        # l'execution se diagnostique mal, un fichier annonce comme ecarte se
+        # remarque tout de suite.
+        print()
+        print("Ecartes (type non accepte par Appian) :")
+        for nom in ecartes:
             print("   ", nom)
     print()
     print("A deposer dans Appian : Administration > Plug-ins.")

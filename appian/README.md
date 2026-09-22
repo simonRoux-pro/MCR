@@ -12,7 +12,7 @@ des variables de cette interface.
 python construire_plugin.py
 ```
 
-Produit `dist/mcr-enregistreur-1.0.0.jar`. Ce fichier est fabrique a partir de
+Produit `dist/mcr-enregistreur-1.0.0.zip`. Ce fichier est fabrique a partir de
 `static/` : **ne jamais modifier les fichiers copies dans `appian/`**, ils sont
 ecrases a chaque construction. Toute correction de la page d'enregistrement se
 fait dans `static/`, puis on reconstruit.
@@ -23,18 +23,28 @@ fait dans `static/`, puis on reconstruit.
 
 | | Package applicatif | Plug-in |
 |---|---|---|
-| Format | `.zip` | `.jar` |
+| Format | `.zip` | `.zip` pour un composant, `.jar` pour du code Java |
 | Contenu | des objets Appian : interfaces, regles, integrations | du code qui etend Appian |
 | Ou | Concepteur > Applications > Importer | le **serveur** Appian |
 
 Un composant etend le langage d'interface — il ajoute la fonction
 `mcrEnregistreur()`. Cela ne peut pas s'importer comme un package : il faut
-que le serveur le charge. D'ou le `.jar`.
+que le serveur le charge.
+
+Un composant se livre en **`.zip`** : le manifeste et les dossiers de
+composants a la racine de l'archive. Le `.jar` est la forme des plug-ins qui
+embarquent du code Java — fonctions, services intelligents, systemes
+connectes. Un composant n'est que du contenu web.
+
+Seuls certains types de fichiers sont acceptes dans ce contenu : `.html`,
+`.htm`, `.css`, `.less`, `.js`, `.woff`, `.woff2`, `.png`, `.gif`, `.jpg`,
+`.jpeg`, `.svg`, `.ico`, `.map`. `construire_plugin.py` ecarte le reste et le
+dit a l'ecran.
 
 **Site auto-heberge** — la voie normale en developpement :
 
 ```bash
-cp mcr-enregistreur-1.0.0.jar <APPIAN_HOME>/_admin/plugins/
+cp mcr-enregistreur-1.0.0.zip <APPIAN_HOME>/_admin/plugins/
 ```
 
 Le chargement est a chaud : Appian relit ce dossier a intervalle regulier
@@ -42,8 +52,14 @@ Le chargement est a chaud : Appian relit ce dossier a intervalle regulier
 redemarrer. Le journal du serveur confirme le chargement, et signale l'erreur
 si le manifeste lui deplait.
 
-**Site Appian Cloud** : Administration > **Plug-ins**. Attention, certains
-environnements Cloud n'acceptent que des plug-ins valides par Appian.
+**Site Appian Cloud** : Administration > **Plug-ins**.
+
+**Un composant peut exiger une signature d'Appian.** La documentation d'Appian
+indique que les composants, contrairement aux autres types de plug-ins,
+passent par une revue : une fois approuve, on recoit une copie du plug-in
+signee par Appian, qui seule s'installe partout. Si le deploiement echoue avec
+un message d'approbation dans le journal du serveur applicatif, c'est cela —
+et aucune correction de l'archive n'y changera rien.
 
 **Verifier que c'est charge** : dans le concepteur d'interface, taper
 `mcrEnregistreur(` — la fonction doit etre proposee avec ses parametres. Si
