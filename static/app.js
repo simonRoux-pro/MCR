@@ -148,14 +148,52 @@ function duree(secondes) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+// --------------------------------------------------------------------------- //
+// Le transport : TOUT ce qui sort de cette page passe par ici.
+//
+// Le reste du fichier — capture des deux sources, dosage des niveaux,
+// decoupage aux silences, etiquetage des locuteurs — ignore l'existence d'un
+// serveur. C'est voulu : pour faire vivre cette page ailleurs (un composant
+// integre a une autre application, par exemple), on remplace cet objet et les
+// sept cents lignes qui suivent ne bougent pas d'une virgule.
+// --------------------------------------------------------------------------- //
+const TRANSPORT = {
+  /** Appel JSON : ouverture de session, suivi, compte rendu. */
+  async appeler(chemin, options = {}) {
+    const reponse = await fetch(lien(chemin), options);
+    if (!reponse.ok) {
+      let detail = `Erreur ${reponse.status}`;
+      try { detail = (await reponse.json()).erreur || detail; } catch (e) { /* reponse non JSON */ }
+      throw new Error(detail);
+    }
+    return reponse.json();
+  },
+
+  /** Un segment decoupe pendant la reunion, avec sa source et son instant. */
+  async envoyerSegment(session, donnees, source, debut) {
+    await fetch(lien(`/api/sessions/${session}/segment`), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/octet-stream",
+        "X-Source": source,
+        "X-Debut": debut.toFixed(2),
+      },
+      body: donnees,
+    });
+  },
+
+  /** Un morceau de l'enregistrement complet, envoye au fil de l'eau. */
+  async envoyerMorceau(session, donnees) {
+    await fetch(lien(`/api/sessions/${session}/morceau`), {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: donnees,
+    });
+  },
+};
+
 async function api(chemin, options = {}) {
-  const reponse = await fetch(lien(chemin), options);
-  if (!reponse.ok) {
-    let detail = `Erreur ${reponse.status}`;
-    try { detail = (await reponse.json()).erreur || detail; } catch (e) { /* reponse non JSON */ }
-    throw new Error(detail);
-  }
-  return reponse.json();
+  return TRANSPORT.appeler(chemin, options);
 }
 
 /** Branche un flux : mesure de niveau, melange d'archive, et flux isole. */
@@ -238,15 +276,7 @@ function demarrerSegment(nom) {
 
 async function envoyerSegment(donnees, source, debut) {
   try {
-    await fetch(lien(`/api/sessions/${sessionId}/segment`), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/octet-stream",
-        "X-Source": source,
-        "X-Debut": debut.toFixed(2),
-      },
-      body: donnees,
-    });
+    await TRANSPORT.envoyerSegment(sessionId, donnees, source, debut);
   } catch (e) {
     etat("Envoi d'un segment interrompu : " + e.message, "erreur");
   }
@@ -427,11 +457,7 @@ async function demarrer() {
     enregistreurArchive.ondataavailable = async (evenement) => {
       if (evenement.data.size === 0 || !sessionId) return;
       try {
-        await fetch(lien(`/api/sessions/${sessionId}/morceau`), {
-          method: "POST",
-          headers: { "Content-Type": "application/octet-stream" },
-          body: evenement.data,
-        });
+        await TRANSPORT.envoyerMorceau(sessionId, evenement.data);
       } catch (e) {
         etat("Envoi d'un morceau audio interrompu : " + e.message, "erreur");
       }
