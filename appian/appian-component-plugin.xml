@@ -12,12 +12,13 @@
 <appian-component-plugin name="Enregistreur de reunion" key="fr.mcr.enregistreur">
   <plugin-info>
     <description>Enregistre une reunion depuis le navigateur, la fait transcrire et en obtient un compte redige.</description>
-    <vendor name="MCR" />
+    <vendor name="MCR" url="https://intradef.gouv.fr" />
     <version>1.0.0</version>
   </plugin-info>
 
   <component rule-name="mcrEnregistreur" version="1.0.0">
     <sdk-version>2.0.0</sdk-version>
+    <icon-file>micro.svg</icon-file>
 
     <!-- Reference metier de l'application appelante : numero de dossier, de
          demande, de reunion. Elle suit l'enregistrement de bout en bout et
