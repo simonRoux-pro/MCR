@@ -19,8 +19,40 @@ fait dans `static/`, puis on reconstruit.
 
 ## Deployer
 
-Administration Appian > **Plug-ins** > deposer le `.jar`. Ou, sur un serveur
-auto-heberge, le copier dans le dossier des plug-ins et redemarrer.
+**Ce n'est pas un package applicatif.** Appian distingue deux choses :
+
+| | Package applicatif | Plug-in |
+|---|---|---|
+| Format | `.zip` | `.jar` |
+| Contenu | des objets Appian : interfaces, regles, integrations | du code qui etend Appian |
+| Ou | Concepteur > Applications > Importer | le **serveur** Appian |
+
+Un composant etend le langage d'interface — il ajoute la fonction
+`mcrEnregistreur()`. Cela ne peut pas s'importer comme un package : il faut
+que le serveur le charge. D'ou le `.jar`.
+
+**Site auto-heberge** — la voie normale en developpement :
+
+```bash
+cp mcr-enregistreur-1.0.0.jar <APPIAN_HOME>/_admin/plugins/
+```
+
+Le chargement est a chaud : Appian relit ce dossier a intervalle regulier
+(`conf.plugins.poll-interval` dans `custom.properties`), il n'y a donc rien a
+redemarrer. Le journal du serveur confirme le chargement, et signale l'erreur
+si le manifeste lui deplait.
+
+**Site Appian Cloud** : Administration > **Plug-ins**. Attention, certains
+environnements Cloud n'acceptent que des plug-ins valides par Appian.
+
+**Verifier que c'est charge** : dans le concepteur d'interface, taper
+`mcrEnregistreur(` — la fonction doit etre proposee avec ses parametres. Si
+elle n'apparait pas, le plug-in n'est pas charge : regarder le journal du
+serveur, pas l'interface.
+
+Le `.zip` que vous exporterez plus tard, c'est votre **application** (les
+interfaces qui utilisent ce composant) — un objet different, a creer dans le
+concepteur.
 
 ## Utiliser dans une interface
 

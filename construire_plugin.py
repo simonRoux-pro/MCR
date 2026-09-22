@@ -70,6 +70,14 @@ def construire() -> Path:
     SORTIE.mkdir(exist_ok=True)
     archive = SORTIE / f"mcr-enregistreur-{version}.jar"
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zip_:
+        # Un JAR porte toujours ce fichier, en premiere position. Le notre ne
+        # contient aucune classe Java, mais un outil qui refuserait une archive
+        # sans manifeste nous rejetterait sans expliquer pourquoi.
+        zip_.writestr("META-INF/MANIFEST.MF",
+                      "Manifest-Version: 1.0\r\n"
+                      f"Implementation-Title: Enregistreur de reunion\r\n"
+                      f"Implementation-Version: {version}\r\n"
+                      "\r\n")
         for chemin in sorted(SOURCE_PLUGIN.rglob("*")):
             if chemin.is_file():
                 zip_.write(chemin, chemin.relative_to(SOURCE_PLUGIN).as_posix())
