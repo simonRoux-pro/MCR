@@ -208,6 +208,18 @@ class Config:
     # faire le menage.
     retention_jours: int = int(_reglage("MEETING_RETENTION_JOURS", "7"))
 
+    # Domaines autorises a appeler l'API depuis un navigateur.
+    #
+    # Quand la page est servie par une autre application (un composant Appian,
+    # par exemple), le navigateur refuse par defaut qu'elle appelle un serveur
+    # d'un autre domaine. Il faut donc nommer ici l'application appelante.
+    #
+    # Plusieurs domaines se separent par des virgules. Vide = aucun appel
+    # d'origine etrangere, ce qui est le bon reglage quand l'outil sert sa
+    # propre page. On ne met JAMAIS "*" : n'importe quel site pourrait alors
+    # lire les transcriptions du navigateur de l'utilisateur.
+    origines: str = _reglage("MEETING_ORIGINES", "")
+
     # Certificat TLS, pour servir en HTTPS. Chemins vers le certificat et sa
     # cle privee ; laisser vide pour servir en HTTP simple.
     #

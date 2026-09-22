@@ -543,3 +543,24 @@ def test_un_fichier_illisible_n_empeche_pas_le_demarrage(donnees):
 
     serveur.sessions.clear()
     assert serveur.charger_les_sessions() == 1
+
+
+# --------------------------------------------------------------------------- #
+# Origines autorisees (CORS)
+#
+# Quand la page est servie par une autre application — le composant Appian —
+# le navigateur n'autorise l'appel au service que si celui-ci nomme cette
+# origine. Un reglage trop large ouvrirait les transcriptions a n'importe quel
+# site visite par l'utilisateur.
+# --------------------------------------------------------------------------- #
+
+def test_aucune_origine_par_defaut():
+    with patch.object(serveur.CONFIG, "origines", ""):
+        assert serveur.origines_autorisees() == []
+
+
+def test_plusieurs_origines_separees_par_des_virgules():
+    with patch.object(serveur.CONFIG, "origines",
+                      " https://appian.interne , https://autre.interne "):
+        assert serveur.origines_autorisees() == ["https://appian.interne",
+                                                 "https://autre.interne"]

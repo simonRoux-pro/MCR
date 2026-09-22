@@ -28,6 +28,7 @@ from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -237,6 +238,25 @@ sessions: dict[str, Session] = {}
 verrou_sessions = threading.Lock()
 
 app = FastAPI(title="Transcription de reunion")
+
+
+def origines_autorisees() -> list[str]:
+    """Les domaines admis a appeler l'API depuis un navigateur."""
+    return [o.strip() for o in CONFIG.origines.split(",") if o.strip()]
+
+
+_origines = origines_autorisees()
+if _origines:
+    # Sans ce reglage, le navigateur refuse qu'une page servie par une autre
+    # application appelle cette API. Les en-tetes X-Source et X-Debut doivent
+    # etre nommes : le navigateur ne laisse passer que les en-tetes autorises.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_origines,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "X-Source", "X-Debut", "X-Cle-Api"],
+    )
 
 
 def mode_direct() -> bool:

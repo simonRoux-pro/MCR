@@ -96,6 +96,7 @@ Le meme fichier accepte quelques reglages de deploiement, qui surchargent
 | `MEETING_CLE_API` | cle exigee sur la route d'integration (voir section 10) |
 | `MEETING_SSL_CERT` / `MEETING_SSL_KEY` | certificat TLS, pour servir en HTTPS |
 | `MEETING_DONNEES` | dossier ou conserver les reunions (vide = temporaire) |
+| `MEETING_ORIGINES` | domaines autorises a appeler l'API depuis un navigateur |
 | `MEETING_RETENTION_JOURS` | effacement automatique au bout de N jours (defaut 7) |
 
 ## 4. Lancer le serveur

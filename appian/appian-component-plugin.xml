@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Manifeste du composant d'enregistrement de reunion.
+
+  Il declare UN composant, utilisable dans n'importe quelle interface par la
+  fonction SAIL du meme nom que rule-name.
+
+  Le dossier des fichiers suit une convention imposee par Appian :
+      <rule-name>/v<numero majeur de version>/
+  soit ici mcrEnregistreur/v1/ — et html-entry-point est relatif a ce dossier.
+-->
+<appian-component-plugin name="Enregistreur de reunion" key="fr.mcr.enregistreur">
+  <plugin-info>
+    <description>Enregistre une reunion depuis le navigateur, la fait transcrire et en obtient un compte redige.</description>
+    <vendor name="MCR" />
+    <version>1.0.0</version>
+  </plugin-info>
+
+  <component rule-name="mcrEnregistreur" version="1.0.0">
+    <sdk-version>2.0.0</sdk-version>
+
+    <!-- Reference metier de l'application appelante : numero de dossier, de
+         demande, de reunion. Elle suit l'enregistrement de bout en bout et
+         permet de retrouver le resultat cote service. -->
+    <parameter>
+      <name>reference</name>
+      <category>input-only</category>
+      <type>Text</type>
+    </parameter>
+
+    <!-- Adresse du service de transcription, par exemple
+         https://transcription.interne/ — c'est lui qui detient le jeton du
+         moteur de transcription, qui ne doit jamais descendre dans le
+         navigateur. -->
+    <parameter>
+      <name>urlService</name>
+      <category>input-only</category>
+      <type>Text</type>
+    </parameter>
+
+    <!-- Libelle du bouton, pour s'adapter au vocabulaire de chaque
+         application sans retoucher au composant. -->
+    <parameter>
+      <name>libelleBouton</name>
+      <category>input-only</category>
+      <type>Text</type>
+    </parameter>
+
+    <!-- Resultats renvoyes a l'interface. input-output : l'interface peut
+         afficher une valeur deja connue, et recoit les mises a jour. -->
+    <parameter>
+      <name>transcription</name>
+      <category>input-output</category>
+      <type>Text</type>
+    </parameter>
+    <parameter>
+      <name>compteRendu</name>
+      <category>input-output</category>
+      <type>Text</type>
+    </parameter>
+
+    <html-entry-point>index.html</html-entry-point>
+    <supported-user-agents>chrome firefox edge safari</supported-user-agents>
+  </component>
+</appian-component-plugin>

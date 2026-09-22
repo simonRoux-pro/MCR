@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Enregistreur de reunion</title>
+<style>
+  /* Volontairement sobre : ce composant vit au milieu d'une interface qui a
+     deja sa charte. Il ne doit pas jurer avec elle. */
+  body { margin: 0; font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+         color: #22252a; }
+  .bloc { display: flex; flex-direction: column; gap: .6rem; align-items: flex-start; }
+  button { font: inherit; font-weight: 600; padding: .55rem 1.1rem; border: 0;
+           border-radius: 6px; background: #1d4ed8; color: #fff; cursor: pointer; }
+  button:hover:not(:disabled) { background: #1a43b8; }
+  button:disabled { background: #9aa2b1; cursor: default; }
+  .message { font-size: .92rem; }
+  .message.erreur { color: #a61b1b; }
+  .message.succes { color: #14671f; }
+  .discret { color: #5b6270; font-size: .85rem; }
+</style>
+</head>
+<body>
+<div class="bloc">
+  <button id="ouvrir" type="button">Enregistrer la reunion</button>
+  <div id="message" class="message discret">Pret.</div>
+</div>
+
+<!-- Place par Appian au chargement : c'est par ce SDK que le composant
+     dialogue avec l'interface. L'adresse litterale ci-dessous est un
+     marqueur, Appian la remplace. -->
+<script src='APPIAN_JS_SDK_URI'></script>
+<script>
+(function () {
+  "use strict";
+
+  // ------------------------------------------------------------------ //
+  // Pourquoi une fenetre separee plutot que tout faire ici
+  //
+  // Appian affiche un composant dans une iframe bridee. Elle autorise le
+  // micro, mais PAS la capture du son de l'ordinateur (display-capture) —
+  // or c'est cette capture qui permet d'entendre les autres participants
+  // d'une reunion a distance. Sans elle, on n'enregistrerait que la
+  // personne devant l'ecran.
+  //
+  // Le bac a sable d'Appian autorise en revanche les fenetres qui en
+  // sortent (allow-popups-to-escape-sandbox). Une fenetre ouverte depuis
+  // ce composant redevient une page de plein droit, avec tous ses droits
+  // de capture. L'enregistrement s'y deroule, et le resultat revient ici
+  // par messages.
+  // ------------------------------------------------------------------ //
+
+  var bouton = document.getElementById("ouvrir");
+  var message = document.getElementById("message");
+  var fenetre = null;
+  var reglages = {};
+
+  function dire(texte, genre) {
+    message.textContent = texte;
+    message.className = "message " + (genre || "discret");
+  }
+
+  /** Adresse de la fenetre d'enregistrement, avec ce qu'elle doit savoir. */
+  function adresseEnregistreur() {
+    var params = new URLSearchParams();
+    if (reglages.reference) params.set("ref", reglages.reference);
+    // Le service vit ailleurs que ce composant : il faut lui dire ou.
+    params.set("api", reglages.urlService);
+    return "enregistreur.html?" + params.toString();
+  }
+
+  bouton.addEventListener("click", function () {
+    if (!reglages.urlService) {
+      dire("Aucune adresse de service n'est configuree.", "erreur");
+      return;
+    }
+    // Si une fenetre est deja ouverte, on la ramene au premier plan plutot
+    // que d'en ouvrir une seconde : deux enregistrements en parallele se
+    // disputeraient le micro.
+    if (fenetre && !fenetre.closed) {
+      fenetre.focus();
+      dire("L'enregistrement est deja ouvert dans une autre fenetre.");
+      return;
+    }
+    fenetre = window.open(adresseEnregistreur(), "mcrEnregistreur",
+                          "width=880,height=760");
+    if (!fenetre) {
+      dire("Le navigateur a bloque la fenetre. L'autoriser pour ce site, "
+           + "puis reessayer.", "erreur");
+      return;
+    }
+    dire("Enregistrement ouvert dans une autre fenetre.");
+  });
+
+  // ------------------------------------------------------------------ //
+  // Retour de la fenetre d'enregistrement
+  // ------------------------------------------------------------------ //
+  window.addEventListener("message", function (evenement) {
+    var donnees = evenement.data;
+    if (!donnees || donnees.source !== "meeting-ct") return;
+
+    // On n'accepte que ce qui vient de la fenetre qu'on a ouverte : une
+    // autre page ne doit pas pouvoir ecrire dans l'interface Appian.
+    if (fenetre && evenement.source !== fenetre) return;
+
+    if (donnees.evenement === "transcription" && donnees.transcription) {
+      Appian.Component.saveValue("transcription", donnees.transcription);
+      dire("Transcription recuperee.", "succes");
+    }
+    if (donnees.evenement === "compteRendu" && donnees.compteRendu) {
+      Appian.Component.saveValue("compteRendu", donnees.compteRendu);
+      dire("Compte rendu recupere.", "succes");
+    }
+  });
+
+  // ------------------------------------------------------------------ //
+  // Reglages venus de l'interface
+  // ------------------------------------------------------------------ //
+  Appian.Component.onNewValue(function (valeurs) {
+    reglages = valeurs || {};
+    bouton.disabled = !!reglages.disabled;
+    if (reglages.libelleBouton) bouton.textContent = reglages.libelleBouton;
+
+    // Une adresse de service absente est une erreur de configuration, pas
+    // une erreur de l'utilisateur : on la signale au concepteur.
+    if (!reglages.urlService) {
+      Appian.Component.setValidations(
+        "Renseigner urlService avec l'adresse du service de transcription.");
+    } else {
+      Appian.Component.setValidations("");
+    }
+  });
+})();
+</script>
+</body>
+</html>

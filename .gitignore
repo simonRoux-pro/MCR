@@ -33,3 +33,9 @@ config_local.py
 
 # Certificats TLS : une cle privee ne se versionne jamais.
 *.pem
+
+# Plugin Appian : fabrique par construire_plugin.py a partir de static/.
+# Versionner ces copies garantirait qu'elles divergent un jour de la source.
+dist/
+appian/mcrEnregistreur/v1/enregistreur.html
+appian/mcrEnregistreur/v1/static/

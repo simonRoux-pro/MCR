@@ -17,9 +17,20 @@
 // lui-meme : c'est la seule information exacte quel que soit le prefixe.
 const RACINE = document.currentScript.src.replace(/static\/app\.js(\?.*)?$/, "");
 
+// Quand la page est servie par une AUTRE application que le service — le
+// composant Appian sert ses propres fichiers — la racine ci-dessus ne designe
+// plus le service. L'hote indique alors ou l'appeler : ?api=https://...
+// Le service doit nommer cette origine dans MEETING_ORIGINES, sinon le
+// navigateur refusera l'appel.
+const API = (() => {
+  const fourni = new URLSearchParams(location.search).get("api");
+  if (!fourni) return RACINE;
+  return fourni.endsWith("/") ? fourni : fourni + "/";
+})();
+
 /** Adresse complete d'une ressource de l'application. */
 function lien(chemin) {
-  return RACINE + chemin.replace(/^\//, "");
+  return API + chemin.replace(/^\//, "");
 }
 
 // Reference metier fournie par l'application appelante : ?ref=DOSSIER-2026-0412
@@ -544,17 +555,28 @@ async function arreter() {
 /** Previent la page qui nous heberge, quand l'outil tourne dans une iframe.
  *  Sans effet en navigation normale : il n'y a alors pas d'autre fenetre. */
 function annoncerAuParent(evenement, session) {
-  if (window.parent === window) return;
-  try {
-    window.parent.postMessage({
-      source: "meeting-ct",
-      evenement,                       // "transcription" | "compteRendu"
-      ref: REFERENCE,
-      etat: session.etat,
-      transcription: session.texte || "",
-      compteRendu: session.compteRendu || "",
-    }, "*");
-  } catch (e) { /* parent d'une autre origine et trop restrictif : tant pis */ }
+  // Deux hotes possibles : la page qui nous encadre (iframe), ou celle qui
+  // nous a ouverts (fenetre detachee). Le composant Appian utilise la seconde,
+  // parce qu'une iframe Appian n'a pas le droit de capter le son de
+  // l'ordinateur — une fenetre ouverte depuis elle, si.
+  const hotes = [];
+  if (window.parent !== window) hotes.push(window.parent);
+  if (window.opener) hotes.push(window.opener);
+  if (!hotes.length) return;
+
+  const message = {
+    source: "meeting-ct",
+    evenement,                         // "transcription" | "compteRendu"
+    ref: REFERENCE,
+    etat: session.etat,
+    transcription: session.texte || "",
+    compteRendu: session.compteRendu || "",
+  };
+  for (const hote of hotes) {
+    try {
+      hote.postMessage(message, "*");
+    } catch (e) { /* hote d'une autre origine et trop restrictif : tant pis */ }
+  }
 }
 
 function terminee(session) {
