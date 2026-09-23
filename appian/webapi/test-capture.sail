@@ -35,7 +35,10 @@ a!httpResponse(
   js.textContent = 'JavaScript actif.';
   js.style.color = '#14671f';
   const journal = document.getElementById('journal');
-  const noter = (t) => { journal.textContent += t + '\n'; };
+  // Pas de sequence d echappement ici : Appian convertit antislash-n en vrai
+  // saut de ligne, ce qui casse la chaine. Le code du caractere l evite.
+  const RETOUR = String.fromCharCode(10);
+  const noter = (t) => { journal.textContent += t + RETOUR; };
   noter('Contexte securise : ' + window.isSecureContext);
 
   document.getElementById('micro').onclick = async () => {
